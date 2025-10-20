@@ -271,11 +271,11 @@ MIT License - see [LICENSE](LICENSE) for details.
 If you use ABTK in your research, please cite:
 
 ```bibtex
-@software{abtk2024,
+@software{abtk2025,
   title={ABTK: A/B Testing Toolkit},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/yourusername/abtk}
+  author={Alexei Veselov},
+  year={2025},
+  url={https://github.com/alexeiveselov92/abtk}
 }
 ```
 
