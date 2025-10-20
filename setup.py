@@ -13,12 +13,12 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 setup(
     name="abtk",
     version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Alexei Veselov",
+    author_email="alexeiveselov92@gmail.com",
     description="A/B Testing Toolkit - Statistical analysis library for A/B tests",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/abtk",
+    url="https://github.com/alexeiveselov92/abtk",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -49,8 +49,8 @@ setup(
     },
     keywords="ab-testing statistics hypothesis-testing experimentation analytics",
     project_urls={
-        "Bug Reports": "https://github.com/yourusername/abtk/issues",
-        "Source": "https://github.com/yourusername/abtk",
-        "Documentation": "https://github.com/yourusername/abtk/blob/main/USAGE.md",
+        "Bug Reports": "https://github.com/alexeiveselov92/abtk/issues",
+        "Source": "https://github.com/alexeiveselov92/abtk",
+        "Documentation": "https://github.com/alexeiveselov92/abtk/blob/main/docs/README.md",
     },
 )
