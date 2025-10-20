@@ -569,21 +569,41 @@ class AncovaTest(BaseTestProcessor):
                 self.logger.debug(f"Could not perform Breusch-Pagan test: {str(e)}")
 
         # 3. Normality of residuals - Jarque-Bera test (built into statsmodels)
-        jb_stat = model_results.jarque_bera[0]
-        jb_pvalue = model_results.jarque_bera[1]
-        validation['normality_test_pvalue'] = jb_pvalue
+        try:
+            jb_stat = model_results.jarque_bera[0]
+            jb_pvalue = model_results.jarque_bera[1]
+            validation['normality_test_pvalue'] = jb_pvalue
 
-        if jb_pvalue < 0.05:
-            if len(df) > 30:
-                warnings.append(
-                    f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
-                    "However, with n>30, inference is still valid due to CLT."
-                )
-            else:
-                warnings.append(
-                    f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
-                    "With small sample size, inference may be unreliable."
-                )
+            if jb_pvalue < 0.05:
+                if len(df) > 30:
+                    warnings.append(
+                        f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
+                        "However, with n>30, inference is still valid due to CLT."
+                    )
+                else:
+                    warnings.append(
+                        f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
+                        "With small sample size, inference may be unreliable."
+                    )
+        except (AttributeError, KeyError):
+            # jarque_bera not available in this version of statsmodels
+            # Use scipy's jarque_bera test instead
+            from scipy.stats import jarque_bera
+            residuals = model_results.resid
+            jb_stat, jb_pvalue = jarque_bera(residuals)
+            validation['normality_test_pvalue'] = jb_pvalue
+
+            if jb_pvalue < 0.05:
+                if len(df) > 30:
+                    warnings.append(
+                        f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
+                        "However, with n>30, inference is still valid due to CLT."
+                    )
+                else:
+                    warnings.append(
+                        f"Residuals are not normally distributed (Jarque-Bera p={jb_pvalue:.4f}). "
+                        "With small sample size, inference may be unreliable."
+                    )
 
         try:
             # 4. Multicollinearity - VIF

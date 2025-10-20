@@ -156,7 +156,7 @@ class TestAncovaTestSingleCovariate:
         assert result.effect == pytest.approx(10, abs=3)
 
         # Check that it's significant
-        assert result.reject is True
+        assert result.reject == True
         assert result.pvalue < 0.05
 
         # Check confidence interval contains true effect
