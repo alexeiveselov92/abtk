@@ -15,6 +15,7 @@ Available tests:
 - ClusteredTTest: T-test for cluster-randomized experiments (cluster-robust SE)
 - ClusteredAncovaTest: ANCOVA for cluster-randomized experiments (covariates + cluster-robust SE)
 - ClusteredOLSTest: Alias for ClusteredAncovaTest
+- ClusteredZTest: Z-test for proportions in cluster-randomized experiments
 """
 
 from .ttest import TTest
@@ -24,6 +25,7 @@ from .ztest import ZTest
 from .ancova_test import AncovaTest
 from .clustered_ttest import ClusteredTTest
 from .clustered_ancova_test import ClusteredAncovaTest, ClusteredOLSTest
+from .clustered_ztest import ClusteredZTest
 
 # Alias for practitioners who prefer "OLS" terminology
 OLSTest = AncovaTest
@@ -38,4 +40,5 @@ __all__ = [
     'ClusteredTTest',
     'ClusteredAncovaTest',
     'ClusteredOLSTest',  # Alias
+    'ClusteredZTest',
 ]
