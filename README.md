@@ -99,7 +99,7 @@ See the [DataFrame Usage Examples](examples/dataframe_usage_example.py) for more
 | **PairedTTest** | Matched pairs A/B test | Removes between-subject variability |
 | **CupedTTest** | A/B test with 1 covariate | Variance reduction |
 | **ZTest** | Proportions (CTR, CVR) | Designed for binary outcomes |
-| **AncovaTest** | A/B test with multiple covariates | Maximum variance reduction, diagnostics |
+| **AncovaTest** (or **OLSTest**) | A/B test with multiple covariates | Maximum variance reduction, diagnostics |
 
 ### Nonparametric Tests
 
@@ -196,7 +196,7 @@ Do you have proportions (CTR, CVR)?
         └─ No (independent samples)
             └─ Do you have covariates?
                 ├─ Yes
-                │   ├─ Multiple covariates? → AncovaTest
+                │   ├─ Multiple covariates? → AncovaTest (or OLSTest)
                 │   ├─ One covariate, normal → CupedTTest
                 │   └─ One covariate, non-parametric → PostNormedBootstrapTest
                 └─ No covariates

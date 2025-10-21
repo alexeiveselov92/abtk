@@ -11,6 +11,7 @@ Available tests:
 - CupedTTest: T-test with CUPED variance reduction
 - ZTest: Z-test for proportions
 - AncovaTest: ANCOVA / Regression Adjustment with multiple covariates
+- OLSTest: Alias for AncovaTest (OLS regression with covariates)
 """
 
 from .ttest import TTest
@@ -19,10 +20,14 @@ from .cuped_ttest import CupedTTest
 from .ztest import ZTest
 from .ancova_test import AncovaTest
 
+# Alias for practitioners who prefer "OLS" terminology
+OLSTest = AncovaTest
+
 __all__ = [
     'TTest',
     'PairedTTest',
     'CupedTTest',
     'ZTest',
     'AncovaTest',
+    'OLSTest',  # Alias
 ]

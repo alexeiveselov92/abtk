@@ -47,9 +47,14 @@ class AncovaTest(BaseTestProcessor):
     """
     ANCOVA (Analysis of Covariance) / Regression Adjustment test.
 
-    Uses linear regression to estimate treatment effect while adjusting for
+    Uses linear regression (OLS) to estimate treatment effect while adjusting for
     multiple covariates. More flexible than CUPED - can use multiple covariates
     and provides full regression diagnostics.
+
+    Note: This class can also be imported as `OLSTest` for practitioners who
+    prefer the OLS terminology:
+        from tests.parametric import AncovaTest  # Statistical name
+        from tests.parametric import OLSTest     # Practitioner name (same class)
 
     Parameters
     ----------

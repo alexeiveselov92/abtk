@@ -191,7 +191,7 @@ print(f"Treatment correlation: {treatment_corr:.3f}")
 
 **Quick example:**
 ```python
-from tests.parametric import AncovaTest
+from tests.parametric import AncovaTest  # or OLSTest (same class)
 
 # Multiple covariates: [baseline_revenue, age, tenure_days]
 control = SampleData(
@@ -202,6 +202,11 @@ control = SampleData(
 
 test = AncovaTest(alpha=0.05, validate_assumptions=True)
 results = test.compare([control, treatment])
+```
+
+**Note:** `AncovaTest` can also be imported as `OLSTest` - both names refer to the same class.
+```python
+from tests.parametric import OLSTest  # Alias for AncovaTest
 ```
 
 **For details on diagnostics, VIF, interactions, and troubleshooting, see [ANCOVA Guide](ancova-guide.md).**
