@@ -8,12 +8,13 @@
 
 ## Key Features
 
-- **8 Statistical Tests** - Parametric (T-Test, Z-Test, CUPED, ANCOVA) and Nonparametric (Bootstrap)
+- **12 Statistical Tests** - Parametric (T-Test, Z-Test, CUPED, ANCOVA) and Nonparametric (Bootstrap)
+- **Cluster-Randomized Experiments** - Geo experiments, store tests, market-level randomization (NEW in v0.3.0)
 - **Variance Reduction** - CUPED, ANCOVA with multiple covariates
 - **Multiple Comparisons** - Bonferroni, Holm, Benjamini-Hochberg, and more
 - **Quantile Analysis** - Analyze treatment effects across the distribution
 - **Unified Interface** - All tests return standardized `TestResult` objects
-- **Automatic Diagnostics** - ANCOVA validates statistical assumptions
+- **Automatic Diagnostics** - ICC, design effect, VIF, and more
 - **Flexible** - Support for relative and absolute effects
 
 ## Quick Start
@@ -109,6 +110,25 @@ See the [DataFrame Usage Examples](examples/dataframe_usage_example.py) for more
 | **PairedBootstrapTest** | Matched pairs, non-normal | Combines pairing + nonparametric |
 | **PostNormedBootstrapTest** | Non-normal with covariate | Bootstrap + variance reduction |
 
+### Cluster-Randomized Tests (NEW in v0.3.0)
+
+For experiments where randomization occurs at group level (cities, stores, schools, etc.) rather than individual level.
+
+| Test | Use Case | Special Features |
+|------|----------|------------------|
+| **ClusteredTTest** | Geo experiments, store tests | Cluster-robust SE, ICC diagnostics |
+| **ClusteredAncovaTest** | Cluster experiments with covariates | Multiple covariates + cluster SE |
+| **ClusteredZTest** | Proportions in geo experiments | CTR/CVR by city with cluster SE |
+| **ClusteredBootstrapTest** | Non-normal cluster data | Resamples clusters, not individuals |
+
+**Key Features:**
+- Accounts for within-cluster correlation (ICC)
+- Provides design effect and effective sample size
+- Validates cluster structure (minimum clusters, balance)
+- All tests return comprehensive cluster diagnostics
+
+See [Cluster Experiments Guide](docs/user-guide/cluster-experiments.md) for details.
+
 ## Documentation
 
 - **[Getting Started](docs/getting-started.md)** - Installation, first steps, basic concepts
@@ -141,6 +161,38 @@ results = test.compare([control, treatment])
 
 # CUPED typically gives narrower CI and lower p-value!
 ```
+
+## Example: Cluster-Randomized Experiment (NEW in v0.3.0)
+
+For geo experiments where cities/regions are randomized:
+
+```python
+from tests.parametric import ClusteredTTest
+
+# Geo experiment: cities randomized to control/treatment
+control = SampleData(
+    data=[100, 110, 95, 105, 98, 102, 108, 92],  # User metrics
+    clusters=[1, 1, 2, 2, 3, 3, 4, 4],            # City IDs (2 users per city)
+    name="Control Cities"
+)
+
+treatment = SampleData(
+    data=[105, 115, 100, 110, 103, 108, 113, 97],
+    clusters=[5, 5, 6, 6, 7, 7, 8, 8],
+    name="Treatment Cities"
+)
+
+test = ClusteredTTest(alpha=0.05, min_clusters=4)
+results = test.compare([control, treatment])
+
+result = results[0]
+# Access cluster diagnostics
+print(f"ICC: {result.method_params['icc_control']:.3f}")
+print(f"Design Effect: {result.method_params['design_effect_control']:.2f}")
+print(f"Effective N: {result.method_params['effective_n_control']:.0f}")
+```
+
+See [Cluster Experiments Guide](docs/user-guide/cluster-experiments.md) for complete workflows.
 
 ## Example: Multiple Comparisons Correction
 
@@ -186,22 +238,30 @@ print(f"Effects significant at: {sig_quantiles}")
 ## Test Selection Decision Tree
 
 ```
-Do you have proportions (CTR, CVR)?
-├─ Yes → ZTest
-└─ No (continuous metric)
-    └─ Do you have paired data?
-        ├─ Yes
-        │   ├─ Assume normality? → PairedTTest
-        │   └─ No assumptions → PairedBootstrapTest
-        └─ No (independent samples)
-            └─ Do you have covariates?
-                ├─ Yes
-                │   ├─ Multiple covariates? → AncovaTest (or OLSTest)
-                │   ├─ One covariate, normal → CupedTTest
-                │   └─ One covariate, non-parametric → PostNormedBootstrapTest
-                └─ No covariates
-                    ├─ Assume normality? → TTest
-                    └─ No assumptions → BootstrapTest
+Is randomization at GROUP level (cities, stores)?
+├─ Yes (Cluster-Randomized)
+│   ├─ Proportions (CTR, CVR)? → ClusteredZTest
+│   └─ Continuous metric
+│       ├─ Have covariates? → ClusteredAncovaTest
+│       ├─ Assume normality? → ClusteredTTest
+│       └─ No assumptions → ClusteredBootstrapTest
+└─ No (Individual-Level Randomization)
+    ├─ Do you have proportions (CTR, CVR)?
+    │   └─ Yes → ZTest
+    └─ No (continuous metric)
+        └─ Do you have paired data?
+            ├─ Yes
+            │   ├─ Assume normality? → PairedTTest
+            │   └─ No assumptions → PairedBootstrapTest
+            └─ No (independent samples)
+                └─ Do you have covariates?
+                    ├─ Yes
+                    │   ├─ Multiple covariates? → AncovaTest (or OLSTest)
+                    │   ├─ One covariate, normal → CupedTTest
+                    │   └─ One covariate, non-parametric → PostNormedBootstrapTest
+                    └─ No covariates
+                        ├─ Assume normality? → TTest
+                        └─ No assumptions → BootstrapTest
 ```
 
 See [Test Selection Guide](docs/user-guide/test-selection.md) for detailed recommendations.
