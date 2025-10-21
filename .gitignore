@@ -78,3 +78,6 @@ venv.bak/
 CLAUDE.md
 .claude/
 TODO.md
+
+# Internal planning documents
+CLUSTER_ROADMAP.md
