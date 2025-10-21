@@ -39,9 +39,10 @@ class SampleData:
         self.strata = None
         self.strata_proportions = None
 
-        # Cluster ids (for cluster-randomized experiments - future)
+        # Cluster ids (for cluster-randomized experiments)
         self.cluster_ids = None
         self.n_clusters = 0
+        self._cluster_sizes = {}
 
         # Covariate(s) - universal feature
         self.covariates = None  # always 2D array (n_samples, n_covariates)
@@ -94,34 +95,78 @@ class SampleData:
         Sets cluster IDs for cluster-randomized experiments.
 
         Cluster IDs identify which cluster each observation belongs to.
-        Can be 1D (simple clusters) or 2D (hierarchical clusters).
+        Can be 1D (simple clusters) or 2D (hierarchical/nested clusters).
 
         Examples:
-        - 1D: [school_id, school_id, ...]
-        - 2D: [[country_id, city_id, school_id], ...]
+        - 1D: [1, 1, 2, 2, 3, 3] - simple clustering (e.g., school_id)
+        - 2D: [[1,1], [1,2], [2,1], [2,2]] - nested (e.g., [city_id, store_id])
 
-        Note: Cluster-randomized analysis is not yet implemented.
-        This is reserved for future use.
+        Args:
+            cluster_ids: 1D or 2D array of cluster identifiers
+
+        Raises:
+            ValueError: If validation fails
         """
         cluster_ids = np.asarray(cluster_ids)
 
+        # Check for missing values
+        if np.any(np.isnan(cluster_ids.astype(float, errors='ignore'))):
+            raise ValueError('cluster_ids cannot contain NaN values')
+
         # Validate dimensions
         if cluster_ids.ndim == 1:
-            # Simple clusters
+            # Simple clusters (1D)
             if len(cluster_ids) != self.sample_size:
-                raise ValueError('Data and cluster_ids lengths do not match')
+                raise ValueError(f'Data length ({self.sample_size}) and cluster_ids length ({len(cluster_ids)}) do not match')
+
             self.cluster_ids = cluster_ids
-            self.n_clusters = len(np.unique(cluster_ids))
+            unique_clusters = np.unique(cluster_ids)
+            self.n_clusters = len(unique_clusters)
+
+            # Calculate cluster sizes
+            self._cluster_sizes = {
+                cluster: np.sum(cluster_ids == cluster)
+                for cluster in unique_clusters
+            }
+
         elif cluster_ids.ndim == 2:
-            # Hierarchical clusters
+            # Hierarchical clusters (2D) - for v0.4.0+
             if cluster_ids.shape[0] != self.sample_size:
-                raise ValueError('Data and cluster_ids lengths do not match')
+                raise ValueError(f'Data length ({self.sample_size}) and cluster_ids rows ({cluster_ids.shape[0]}) do not match')
+
             self.cluster_ids = cluster_ids
             # Count unique combinations for hierarchical clusters
             unique_clusters = np.unique(cluster_ids, axis=0)
             self.n_clusters = len(unique_clusters)
+
+            # Calculate cluster sizes (for hierarchical, count by unique tuple)
+            self._cluster_sizes = {}
+            for cluster_tuple in unique_clusters:
+                mask = np.all(cluster_ids == cluster_tuple, axis=1)
+                count = np.sum(mask)
+                cluster_key = tuple(cluster_tuple)
+                self._cluster_sizes[cluster_key] = count
         else:
             raise ValueError('cluster_ids must be 1D or 2D array')
+
+        # Validation warnings
+        import warnings
+
+        # Warn if too few clusters
+        if self.n_clusters < 5:
+            warnings.warn(
+                f'Only {self.n_clusters} clusters detected. Cluster-randomized experiments '
+                f'typically require at least 5-10 clusters per group for reliable inference.',
+                UserWarning
+            )
+
+        # Warn if any cluster has size 1
+        min_cluster_size = min(self._cluster_sizes.values())
+        if min_cluster_size == 1:
+            warnings.warn(
+                f'Some clusters have only 1 observation. This may lead to unstable estimates.',
+                UserWarning
+            )
 
     def _set_covariates(self, covariates):
         """
@@ -172,3 +217,122 @@ class SampleData:
     def cov_corr_coef(self):
         """For backward compatibility - returns the correlation with the first covariate"""
         return self.cov_corr_matrix[0] if self.n_covs > 0 else None
+
+    # Cluster helper methods
+    def get_cluster_sizes(self):
+        """
+        Get sizes of all clusters.
+
+        Returns:
+            dict: Dictionary mapping cluster_id -> cluster_size
+                  For 1D clusters: {cluster_id: size}
+                  For 2D clusters: {(cluster_tuple): size}
+
+        Raises:
+            ValueError: If cluster_ids not set
+
+        Example:
+            >>> sample = SampleData(data=[1,2,3,4,5,6], cluster_ids=[1,1,2,2,3,3])
+            >>> sample.get_cluster_sizes()
+            {1: 2, 2: 2, 3: 2}
+        """
+        if self.cluster_ids is None:
+            raise ValueError('cluster_ids not set for this sample')
+        return self._cluster_sizes.copy()
+
+    def get_cluster_size_stats(self):
+        """
+        Get statistics about cluster sizes.
+
+        Returns:
+            dict: Dictionary with keys:
+                - 'mean': Mean cluster size
+                - 'std': Standard deviation of cluster sizes
+                - 'min': Minimum cluster size
+                - 'max': Maximum cluster size
+                - 'cv': Coefficient of variation (std/mean)
+
+        Raises:
+            ValueError: If cluster_ids not set
+
+        Example:
+            >>> sample = SampleData(data=[1,2,3,4,5,6,7], cluster_ids=[1,1,2,2,2,3,3])
+            >>> stats = sample.get_cluster_size_stats()
+            >>> stats['mean']  # (2 + 3 + 2) / 3 = 2.33
+            2.33...
+        """
+        if self.cluster_ids is None:
+            raise ValueError('cluster_ids not set for this sample')
+
+        sizes = np.array(list(self._cluster_sizes.values()))
+
+        return {
+            'mean': np.mean(sizes),
+            'std': np.std(sizes),
+            'min': np.min(sizes),
+            'max': np.max(sizes),
+            'cv': np.std(sizes) / np.mean(sizes) if np.mean(sizes) > 0 else 0
+        }
+
+    def get_cluster_data(self, cluster_id):
+        """
+        Get all observations from a specific cluster.
+
+        Args:
+            cluster_id: ID of the cluster (scalar for 1D, tuple for 2D)
+
+        Returns:
+            np.ndarray: Array of observations from that cluster
+
+        Raises:
+            ValueError: If cluster_ids not set or cluster_id not found
+
+        Example:
+            >>> sample = SampleData(data=[10,20,30,40], cluster_ids=[1,1,2,2])
+            >>> sample.get_cluster_data(1)
+            array([10, 20])
+            >>> sample.get_cluster_data(2)
+            array([30, 40])
+        """
+        if self.cluster_ids is None:
+            raise ValueError('cluster_ids not set for this sample')
+
+        if self.cluster_ids.ndim == 1:
+            # Simple 1D clusters
+            mask = self.cluster_ids == cluster_id
+        elif self.cluster_ids.ndim == 2:
+            # Hierarchical 2D clusters
+            if not isinstance(cluster_id, (tuple, list, np.ndarray)):
+                raise ValueError('For 2D clusters, cluster_id must be a tuple/list/array')
+            cluster_id = np.asarray(cluster_id)
+            mask = np.all(self.cluster_ids == cluster_id, axis=1)
+        else:
+            raise ValueError('Invalid cluster_ids dimensions')
+
+        cluster_data = self.data[mask]
+
+        if len(cluster_data) == 0:
+            raise ValueError(f'Cluster {cluster_id} not found in data')
+
+        return cluster_data
+
+    @property
+    def cluster_size_mean(self):
+        """Mean cluster size (property for convenience)"""
+        if self.cluster_ids is None:
+            return None
+        return self.get_cluster_size_stats()['mean']
+
+    @property
+    def cluster_size_std(self):
+        """Standard deviation of cluster sizes (property for convenience)"""
+        if self.cluster_ids is None:
+            return None
+        return self.get_cluster_size_stats()['std']
+
+    @property
+    def cluster_size_cv(self):
+        """Coefficient of variation of cluster sizes (property for convenience)"""
+        if self.cluster_ids is None:
+            return None
+        return self.get_cluster_size_stats()['cv']
