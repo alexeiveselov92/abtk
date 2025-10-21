@@ -16,7 +16,7 @@ class SampleData:
                  covariates: Union[list, np.ndarray] = None,
                  strata: Union[list, np.ndarray] = None,
                  paired_ids: Union[list, np.ndarray] = None,
-                 cluster_ids: Union[list, np.ndarray] = None,
+                 clusters: Union[list, np.ndarray] = None,
                  name: str = None,
                  metadata: Dict = None):
 
@@ -39,8 +39,8 @@ class SampleData:
         self.strata = None
         self.strata_proportions = None
 
-        # Cluster ids (for cluster-randomized experiments)
-        self.cluster_ids = None
+        # Clusters (for cluster-randomized experiments)
+        self.clusters = None
         self.n_clusters = 0
         self._cluster_sizes = {}
 
@@ -58,8 +58,8 @@ class SampleData:
         if strata is not None:
             self._set_strata(strata)
 
-        if cluster_ids is not None:
-            self._set_cluster_ids(cluster_ids)
+        if clusters is not None:
+            self._set_clusters(clusters)
 
         if covariates is not None:
             self._set_covariates(covariates)
@@ -90,11 +90,11 @@ class SampleData:
         unique_strata, strata_counts = np.unique(self.strata, return_counts=True)
         self.strata_proportions = dict(zip(unique_strata, strata_counts))
 
-    def _set_cluster_ids(self, cluster_ids):
+    def _set_clusters(self, clusters):
         """
-        Sets cluster IDs for cluster-randomized experiments.
+        Sets cluster assignments for cluster-randomized experiments.
 
-        Cluster IDs identify which cluster each observation belongs to.
+        Clusters identify which cluster each observation belongs to.
         Can be 1D (simple clusters) or 2D (hierarchical/nested clusters).
 
         Examples:
@@ -102,52 +102,52 @@ class SampleData:
         - 2D: [[1,1], [1,2], [2,1], [2,2]] - nested (e.g., [city_id, store_id])
 
         Args:
-            cluster_ids: 1D or 2D array of cluster identifiers
+            clusters: 1D or 2D array of cluster assignments
 
         Raises:
             ValueError: If validation fails
         """
-        cluster_ids = np.asarray(cluster_ids)
+        clusters = np.asarray(clusters)
 
         # Check for missing values
-        if np.any(np.isnan(cluster_ids.astype(float, errors='ignore'))):
-            raise ValueError('cluster_ids cannot contain NaN values')
+        if np.any(np.isnan(clusters.astype(float, errors='ignore'))):
+            raise ValueError('clusters cannot contain NaN values')
 
         # Validate dimensions
-        if cluster_ids.ndim == 1:
+        if clusters.ndim == 1:
             # Simple clusters (1D)
-            if len(cluster_ids) != self.sample_size:
-                raise ValueError(f'Data length ({self.sample_size}) and cluster_ids length ({len(cluster_ids)}) do not match')
+            if len(clusters) != self.sample_size:
+                raise ValueError(f'Data length ({self.sample_size}) and clusters length ({len(clusters)}) do not match')
 
-            self.cluster_ids = cluster_ids
-            unique_clusters = np.unique(cluster_ids)
+            self.clusters = clusters
+            unique_clusters = np.unique(clusters)
             self.n_clusters = len(unique_clusters)
 
             # Calculate cluster sizes
             self._cluster_sizes = {
-                cluster: np.sum(cluster_ids == cluster)
+                cluster: np.sum(clusters == cluster)
                 for cluster in unique_clusters
             }
 
-        elif cluster_ids.ndim == 2:
+        elif clusters.ndim == 2:
             # Hierarchical clusters (2D) - for v0.4.0+
-            if cluster_ids.shape[0] != self.sample_size:
-                raise ValueError(f'Data length ({self.sample_size}) and cluster_ids rows ({cluster_ids.shape[0]}) do not match')
+            if clusters.shape[0] != self.sample_size:
+                raise ValueError(f'Data length ({self.sample_size}) and clusters rows ({clusters.shape[0]}) do not match')
 
-            self.cluster_ids = cluster_ids
+            self.clusters = clusters
             # Count unique combinations for hierarchical clusters
-            unique_clusters = np.unique(cluster_ids, axis=0)
+            unique_clusters = np.unique(clusters, axis=0)
             self.n_clusters = len(unique_clusters)
 
             # Calculate cluster sizes (for hierarchical, count by unique tuple)
             self._cluster_sizes = {}
             for cluster_tuple in unique_clusters:
-                mask = np.all(cluster_ids == cluster_tuple, axis=1)
+                mask = np.all(clusters == cluster_tuple, axis=1)
                 count = np.sum(mask)
                 cluster_key = tuple(cluster_tuple)
                 self._cluster_sizes[cluster_key] = count
         else:
-            raise ValueError('cluster_ids must be 1D or 2D array')
+            raise ValueError('clusters must be 1D or 2D array')
 
         # Validation warnings
         import warnings
@@ -224,20 +224,20 @@ class SampleData:
         Get sizes of all clusters.
 
         Returns:
-            dict: Dictionary mapping cluster_id -> cluster_size
-                  For 1D clusters: {cluster_id: size}
+            dict: Dictionary mapping cluster -> cluster_size
+                  For 1D clusters: {cluster: size}
                   For 2D clusters: {(cluster_tuple): size}
 
         Raises:
-            ValueError: If cluster_ids not set
+            ValueError: If clusters not set
 
         Example:
-            >>> sample = SampleData(data=[1,2,3,4,5,6], cluster_ids=[1,1,2,2,3,3])
+            >>> sample = SampleData(data=[1,2,3,4,5,6], clusters=[1,1,2,2,3,3])
             >>> sample.get_cluster_sizes()
             {1: 2, 2: 2, 3: 2}
         """
-        if self.cluster_ids is None:
-            raise ValueError('cluster_ids not set for this sample')
+        if self.clusters is None:
+            raise ValueError('clusters not set for this sample')
         return self._cluster_sizes.copy()
 
     def get_cluster_size_stats(self):
@@ -253,16 +253,16 @@ class SampleData:
                 - 'cv': Coefficient of variation (std/mean)
 
         Raises:
-            ValueError: If cluster_ids not set
+            ValueError: If clusters not set
 
         Example:
-            >>> sample = SampleData(data=[1,2,3,4,5,6,7], cluster_ids=[1,1,2,2,2,3,3])
+            >>> sample = SampleData(data=[1,2,3,4,5,6,7], clusters=[1,1,2,2,2,3,3])
             >>> stats = sample.get_cluster_size_stats()
             >>> stats['mean']  # (2 + 3 + 2) / 3 = 2.33
             2.33...
         """
-        if self.cluster_ids is None:
-            raise ValueError('cluster_ids not set for this sample')
+        if self.clusters is None:
+            raise ValueError('clusters not set for this sample')
 
         sizes = np.array(list(self._cluster_sizes.values()))
 
@@ -274,65 +274,65 @@ class SampleData:
             'cv': np.std(sizes) / np.mean(sizes) if np.mean(sizes) > 0 else 0
         }
 
-    def get_cluster_data(self, cluster_id):
+    def get_cluster_data(self, cluster):
         """
         Get all observations from a specific cluster.
 
         Args:
-            cluster_id: ID of the cluster (scalar for 1D, tuple for 2D)
+            cluster: Cluster identifier (scalar for 1D, tuple for 2D)
 
         Returns:
             np.ndarray: Array of observations from that cluster
 
         Raises:
-            ValueError: If cluster_ids not set or cluster_id not found
+            ValueError: If clusters not set or cluster not found
 
         Example:
-            >>> sample = SampleData(data=[10,20,30,40], cluster_ids=[1,1,2,2])
+            >>> sample = SampleData(data=[10,20,30,40], clusters=[1,1,2,2])
             >>> sample.get_cluster_data(1)
             array([10, 20])
             >>> sample.get_cluster_data(2)
             array([30, 40])
         """
-        if self.cluster_ids is None:
-            raise ValueError('cluster_ids not set for this sample')
+        if self.clusters is None:
+            raise ValueError('clusters not set for this sample')
 
-        if self.cluster_ids.ndim == 1:
+        if self.clusters.ndim == 1:
             # Simple 1D clusters
-            mask = self.cluster_ids == cluster_id
-        elif self.cluster_ids.ndim == 2:
+            mask = self.clusters == cluster
+        elif self.clusters.ndim == 2:
             # Hierarchical 2D clusters
-            if not isinstance(cluster_id, (tuple, list, np.ndarray)):
-                raise ValueError('For 2D clusters, cluster_id must be a tuple/list/array')
-            cluster_id = np.asarray(cluster_id)
-            mask = np.all(self.cluster_ids == cluster_id, axis=1)
+            if not isinstance(cluster, (tuple, list, np.ndarray)):
+                raise ValueError('For 2D clusters, cluster must be a tuple/list/array')
+            cluster = np.asarray(cluster)
+            mask = np.all(self.clusters == cluster, axis=1)
         else:
-            raise ValueError('Invalid cluster_ids dimensions')
+            raise ValueError('Invalid clusters dimensions')
 
         cluster_data = self.data[mask]
 
         if len(cluster_data) == 0:
-            raise ValueError(f'Cluster {cluster_id} not found in data')
+            raise ValueError(f'Cluster {cluster} not found in data')
 
         return cluster_data
 
     @property
     def cluster_size_mean(self):
         """Mean cluster size (property for convenience)"""
-        if self.cluster_ids is None:
+        if self.clusters is None:
             return None
         return self.get_cluster_size_stats()['mean']
 
     @property
     def cluster_size_std(self):
         """Standard deviation of cluster sizes (property for convenience)"""
-        if self.cluster_ids is None:
+        if self.clusters is None:
             return None
         return self.get_cluster_size_stats()['std']
 
     @property
     def cluster_size_cv(self):
         """Coefficient of variation of cluster sizes (property for convenience)"""
-        if self.cluster_ids is None:
+        if self.clusters is None:
             return None
         return self.get_cluster_size_stats()['cv']
