@@ -686,3 +686,229 @@ def compare_mde_with_without_cuped(
     improvement = (mde_regular - mde_cuped) / mde_regular
 
     return mde_regular, mde_cuped, improvement
+
+
+# =============================================================================
+# Multiple Comparisons Correction for Planning
+# =============================================================================
+
+def calculate_number_of_comparisons(
+    num_groups: int,
+    comparison_type: Literal["pairwise", "vs_control"] = "vs_control"
+) -> int:
+    """
+    Calculate number of pairwise comparisons for multi-variant tests.
+
+    Parameters
+    ----------
+    num_groups : int
+        Total number of groups (including control)
+        - For A/B: num_groups=2 (1 comparison)
+        - For A/B/C: num_groups=3 (2 or 3 comparisons depending on type)
+        - For A/B/C/D: num_groups=4 (3 or 6 comparisons depending on type)
+    comparison_type : {'pairwise', 'vs_control'}, default='vs_control'
+        - 'vs_control': Compare each treatment to control (recommended)
+          Number of comparisons = num_groups - 1
+        - 'pairwise': Compare all pairs (all vs all)
+          Number of comparisons = C(n,2) = n*(n-1)/2
+
+    Returns
+    -------
+    int
+        Number of pairwise comparisons
+
+    Examples
+    --------
+    >>> # A/B/C test: 1 control + 2 treatments
+    >>> calculate_number_of_comparisons(num_groups=3, comparison_type="vs_control")
+    2
+
+    >>> # A/B/C test: all pairwise comparisons
+    >>> calculate_number_of_comparisons(num_groups=3, comparison_type="pairwise")
+    3
+
+    >>> # A/B/C/D test: compare all to control
+    >>> calculate_number_of_comparisons(num_groups=4, comparison_type="vs_control")
+    3
+
+    >>> # A/B/C/D test: all pairs
+    >>> calculate_number_of_comparisons(num_groups=4, comparison_type="pairwise")
+    6
+
+    Notes
+    -----
+    For most A/B tests, use 'vs_control' (comparing treatments to control only).
+    Use 'pairwise' only if you need to compare all treatments with each other.
+    """
+    if num_groups < 2:
+        raise ValueError("Must have at least 2 groups")
+
+    if comparison_type == "vs_control":
+        # Compare each treatment to control: n-1 comparisons
+        return num_groups - 1
+    elif comparison_type == "pairwise":
+        # All pairwise comparisons: C(n,2) = n*(n-1)/2
+        return num_groups * (num_groups - 1) // 2
+    else:
+        raise ValueError(
+            f"Invalid comparison_type: {comparison_type}. "
+            "Use 'vs_control' or 'pairwise'"
+        )
+
+
+def adjust_alpha_for_multiple_comparisons(
+    alpha: float = 0.05,
+    num_groups: Optional[int] = None,
+    num_comparisons: Optional[int] = None,
+    comparison_type: Literal["pairwise", "vs_control"] = "vs_control",
+    method: Literal["bonferroni", "sidak"] = "bonferroni"
+) -> float:
+    """
+    Adjust alpha level for multiple comparisons during experiment planning.
+
+    Use this BEFORE running your experiment to calculate the corrected
+    significance level you should use in sample size calculations.
+
+    Parameters
+    ----------
+    alpha : float, default=0.05
+        Desired family-wise error rate (overall alpha level)
+    num_groups : int, optional
+        Total number of groups (including control)
+        Provide either num_groups OR num_comparisons, not both
+    num_comparisons : int, optional
+        Number of pairwise comparisons
+        Provide either num_groups OR num_comparisons, not both
+    comparison_type : {'pairwise', 'vs_control'}, default='vs_control'
+        Type of comparisons (used only if num_groups is provided)
+        - 'vs_control': Compare treatments to control only
+        - 'pairwise': All pairwise comparisons
+    method : {'bonferroni', 'sidak'}, default='bonferroni'
+        Correction method
+        - 'bonferroni': alpha_adj = alpha / m (conservative)
+        - 'sidak': alpha_adj = 1 - (1-alpha)^(1/m) (less conservative)
+
+    Returns
+    -------
+    float
+        Adjusted alpha level to use in sample size calculations
+
+    Raises
+    ------
+    ValueError
+        If neither num_groups nor num_comparisons is provided
+        If both num_groups and num_comparisons are provided
+
+    Examples
+    --------
+    >>> # Example 1: A/B/C test (1 control + 2 treatments)
+    >>> # Want overall alpha=0.05, compare each treatment to control
+    >>> alpha_adj = adjust_alpha_for_multiple_comparisons(
+    ...     alpha=0.05,
+    ...     num_groups=3,
+    ...     comparison_type="vs_control"
+    ... )
+    >>> print(f"Adjusted alpha: {alpha_adj:.4f}")
+    Adjusted alpha: 0.0250
+
+    >>> # Now use adjusted alpha in sample size calculation
+    >>> n = calculate_sample_size_ttest(
+    ...     baseline_mean=100,
+    ...     std=20,
+    ...     mde=0.05,
+    ...     alpha=alpha_adj  # Use corrected alpha!
+    ... )
+    >>> print(f"Need {n:,} users per group")
+    Need 2102 users per group
+
+    >>> # Example 2: A/B/C/D test with all pairwise comparisons
+    >>> alpha_adj = adjust_alpha_for_multiple_comparisons(
+    ...     alpha=0.05,
+    ...     num_groups=4,
+    ...     comparison_type="pairwise",
+    ...     method="sidak"
+    ... )
+    >>> print(f"Adjusted alpha (Sidak): {alpha_adj:.4f}")
+    Adjusted alpha (Sidak): 0.0085
+
+    >>> # Example 3: If you already know number of comparisons
+    >>> alpha_adj = adjust_alpha_for_multiple_comparisons(
+    ...     alpha=0.05,
+    ...     num_comparisons=6
+    ... )
+    >>> print(f"Adjusted alpha: {alpha_adj:.4f}")
+    Adjusted alpha: 0.0083
+
+    >>> # Example 4: Compare Bonferroni vs Sidak
+    >>> alpha_bonf = adjust_alpha_for_multiple_comparisons(
+    ...     alpha=0.05, num_comparisons=3, method="bonferroni"
+    ... )
+    >>> alpha_sidak = adjust_alpha_for_multiple_comparisons(
+    ...     alpha=0.05, num_comparisons=3, method="sidak"
+    ... )
+    >>> print(f"Bonferroni: {alpha_bonf:.4f}")
+    >>> print(f"Sidak: {alpha_sidak:.4f}")
+    Bonferroni: 0.0167
+    Sidak: 0.0170
+
+    Notes
+    -----
+    **When to use this function:**
+    - Planning a multi-variant test (A/B/C, A/B/C/D, etc.)
+    - Want to control family-wise error rate (FWER)
+    - Need to calculate sample size accounting for multiple comparisons
+
+    **Which method to choose:**
+    - **Bonferroni**: Most common, conservative, easy to understand
+    - **Sidak**: Less conservative, slightly more powerful
+
+    **Workflow:**
+    1. Determine number of groups or comparisons
+    2. Adjust alpha using this function
+    3. Use adjusted alpha in sample size calculation
+    4. Run experiment with corrected alpha
+
+    **For post-hoc correction** (after running tests):
+    Use `utils.corrections.adjust_pvalues()` instead
+
+    See Also
+    --------
+    calculate_number_of_comparisons : Calculate number of comparisons
+    utils.corrections.adjust_pvalues : Post-hoc p-value correction
+    """
+    # Validate inputs
+    if num_groups is None and num_comparisons is None:
+        raise ValueError(
+            "Must provide either 'num_groups' or 'num_comparisons'"
+        )
+
+    if num_groups is not None and num_comparisons is not None:
+        raise ValueError(
+            "Provide either 'num_groups' OR 'num_comparisons', not both"
+        )
+
+    if not 0 < alpha < 1:
+        raise ValueError("Alpha must be between 0 and 1")
+
+    # Calculate number of comparisons if num_groups provided
+    if num_groups is not None:
+        m = calculate_number_of_comparisons(num_groups, comparison_type)
+    else:
+        m = num_comparisons
+
+    if m < 1:
+        raise ValueError("Number of comparisons must be at least 1")
+
+    # Apply correction
+    if method == "bonferroni":
+        # Bonferroni: alpha_adj = alpha / m
+        alpha_adjusted = alpha / m
+    elif method == "sidak":
+        # Sidak: alpha_adj = 1 - (1 - alpha)^(1/m)
+        alpha_adjusted = 1 - (1 - alpha) ** (1/m)
+    else:
+        raise ValueError(
+            f"Invalid method: {method}. Use 'bonferroni' or 'sidak'"
+        )
+
+    return alpha_adjusted

@@ -17,7 +17,9 @@ from utils.sample_size_calculator import (
     calculate_sample_size_cuped,
     calculate_mde_proportions,
     calculate_sample_size_proportions,
-    compare_mde_with_without_cuped
+    compare_mde_with_without_cuped,
+    calculate_number_of_comparisons,
+    adjust_alpha_for_multiple_comparisons
 )
 
 
@@ -324,6 +326,239 @@ def example_8_comparison_utility():
     print()
 
 
+def example_9_multiple_comparisons_planning():
+    """
+    Example 9: Planning for multiple comparisons (A/B/C, A/B/C/D tests).
+
+    Shows how to adjust alpha when testing multiple variants.
+    """
+    print("=" * 70)
+    print("Example 9: Multiple Comparisons Planning (A/B/C/D Tests)")
+    print("=" * 70)
+
+    print("\nScenario: A/B/C/D test (1 control + 3 treatments)")
+    print("  Baseline: mean=$100, std=$20")
+    print("  Target MDE: 5%")
+    print("  Overall alpha: 0.05 (5% family-wise error rate)")
+
+    # Step 1: Calculate number of comparisons
+    num_groups = 4  # 1 control + 3 treatments
+    num_comp = calculate_number_of_comparisons(
+        num_groups=num_groups,
+        comparison_type="vs_control"
+    )
+
+    print(f"\n--- Step 1: Calculate number of comparisons ---")
+    print(f"  Number of groups: {num_groups}")
+    print(f"  Comparison type: vs_control")
+    print(f"  Number of comparisons: {num_comp}")
+    print(f"  (B vs A, C vs A, D vs A)")
+
+    # Step 2: Adjust alpha
+    alpha_adj = adjust_alpha_for_multiple_comparisons(
+        alpha=0.05,
+        num_groups=num_groups,
+        comparison_type="vs_control",
+        method="bonferroni"
+    )
+
+    print(f"\n--- Step 2: Adjust alpha (Bonferroni) ---")
+    print(f"  Original alpha: 0.0500")
+    print(f"  Adjusted alpha: {alpha_adj:.4f}")
+    print(f"  Formula: 0.05 / {num_comp} = {alpha_adj:.4f}")
+
+    # Step 3: Calculate sample size WITHOUT correction (WRONG!)
+    n_wrong = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=0.05  # Not corrected!
+    )
+
+    # Step 4: Calculate sample size WITH correction (CORRECT!)
+    n_correct = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=alpha_adj  # Corrected!
+    )
+
+    print(f"\n--- Step 3: Calculate sample size ---")
+    print(f"\n❌ WITHOUT correction (WRONG):")
+    print(f"  Sample size per group: {n_wrong:,}")
+    print(f"  Total users: {n_wrong * num_groups:,}")
+    print(f"  → Family-wise error rate > 5%! ⚠️")
+
+    print(f"\n✅ WITH correction (CORRECT):")
+    print(f"  Sample size per group: {n_correct:,}")
+    print(f"  Total users: {n_correct * num_groups:,}")
+    print(f"  → Family-wise error rate = 5% ✓")
+
+    print(f"\n--- Impact of correction ---")
+    print(f"  Extra users per group: {n_correct - n_wrong:,}")
+    print(f"  Extra users total: {(n_correct - n_wrong) * num_groups:,}")
+    print(f"  Increase: {(n_correct - n_wrong) / n_wrong:.1%}")
+
+    # Compare different test designs
+    print(f"\n--- Comparison of different test designs ---")
+    test_designs = [
+        ("A/B", 2, "vs_control"),
+        ("A/B/C", 3, "vs_control"),
+        ("A/B/C/D", 4, "vs_control"),
+        ("A/B/C/D/E", 5, "vs_control"),
+    ]
+
+    print(f"\n{'Test':12} {'Groups':7} {'Comps':6} {'Alpha_adj':10} {'N per group':12} {'Total N':10} {'vs A/B':8}")
+    print("-" * 75)
+
+    for name, n_groups, comp_type in test_designs:
+        alpha_adj = adjust_alpha_for_multiple_comparisons(
+            alpha=0.05,
+            num_groups=n_groups,
+            comparison_type=comp_type
+        )
+        n = calculate_sample_size_ttest(
+            baseline_mean=100,
+            std=20,
+            mde=0.05,
+            alpha=alpha_adj
+        )
+        n_comps = calculate_number_of_comparisons(n_groups, comp_type)
+        total_n = n * n_groups
+        baseline_n = 1571  # A/B test sample size
+
+        print(f"{name:12} {n_groups:7} {n_comps:6} {alpha_adj:10.4f} {n:12,} {total_n:10,} {(n/baseline_n - 1):+8.1%}")
+
+    print()
+
+
+def example_10_multiple_comparisons_vs_pairwise():
+    """
+    Example 10: Compare vs_control vs pairwise comparisons.
+
+    Shows the difference between comparing to control only vs all pairwise.
+    """
+    print("=" * 70)
+    print("Example 10: vs_control vs pairwise Comparisons")
+    print("=" * 70)
+
+    print("\nScenario: A/B/C/D test (4 groups)")
+    print("  Which comparison strategy should we use?")
+
+    # vs_control
+    num_comp_vs_control = calculate_number_of_comparisons(
+        num_groups=4,
+        comparison_type="vs_control"
+    )
+    alpha_vs_control = adjust_alpha_for_multiple_comparisons(
+        alpha=0.05,
+        num_groups=4,
+        comparison_type="vs_control"
+    )
+    n_vs_control = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=alpha_vs_control
+    )
+
+    # pairwise
+    num_comp_pairwise = calculate_number_of_comparisons(
+        num_groups=4,
+        comparison_type="pairwise"
+    )
+    alpha_pairwise = adjust_alpha_for_multiple_comparisons(
+        alpha=0.05,
+        num_groups=4,
+        comparison_type="pairwise"
+    )
+    n_pairwise = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=alpha_pairwise
+    )
+
+    print(f"\n--- Strategy 1: vs_control (recommended) ---")
+    print(f"  Comparisons: {num_comp_vs_control} (B vs A, C vs A, D vs A)")
+    print(f"  Adjusted alpha: {alpha_vs_control:.4f}")
+    print(f"  Sample size per group: {n_vs_control:,}")
+    print(f"  Total users: {n_vs_control * 4:,}")
+
+    print(f"\n--- Strategy 2: pairwise (all pairs) ---")
+    print(f"  Comparisons: {num_comp_pairwise} (A-B, A-C, A-D, B-C, B-D, C-D)")
+    print(f"  Adjusted alpha: {alpha_pairwise:.4f}")
+    print(f"  Sample size per group: {n_pairwise:,}")
+    print(f"  Total users: {n_pairwise * 4:,}")
+
+    print(f"\n--- Comparison ---")
+    print(f"  Extra users per group (pairwise): {n_pairwise - n_vs_control:,}")
+    print(f"  Extra total users (pairwise): {(n_pairwise - n_vs_control) * 4:,}")
+    print(f"  Increase: {(n_pairwise - n_vs_control) / n_vs_control:.1%}")
+
+    print(f"\n→ Recommendation: Use 'vs_control' unless you need to compare treatments!")
+    print()
+
+
+def example_11_bonferroni_vs_sidak():
+    """
+    Example 11: Compare Bonferroni vs Sidak correction methods.
+
+    Shows the difference between two correction methods.
+    """
+    print("=" * 70)
+    print("Example 11: Bonferroni vs Sidak Correction")
+    print("=" * 70)
+
+    print("\nScenario: A/B/C test (3 comparisons)")
+    print("  Which correction method is better?")
+
+    # Bonferroni
+    alpha_bonf = adjust_alpha_for_multiple_comparisons(
+        alpha=0.05,
+        num_comparisons=3,
+        method="bonferroni"
+    )
+    n_bonf = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=alpha_bonf
+    )
+
+    # Sidak
+    alpha_sidak = adjust_alpha_for_multiple_comparisons(
+        alpha=0.05,
+        num_comparisons=3,
+        method="sidak"
+    )
+    n_sidak = calculate_sample_size_ttest(
+        baseline_mean=100,
+        std=20,
+        mde=0.05,
+        alpha=alpha_sidak
+    )
+
+    print(f"\n--- Bonferroni (conservative) ---")
+    print(f"  Formula: alpha / m = 0.05 / 3")
+    print(f"  Adjusted alpha: {alpha_bonf:.4f}")
+    print(f"  Sample size per group: {n_bonf:,}")
+
+    print(f"\n--- Sidak (less conservative) ---")
+    print(f"  Formula: 1 - (1 - alpha)^(1/m)")
+    print(f"  Adjusted alpha: {alpha_sidak:.4f}")
+    print(f"  Sample size per group: {n_sidak:,}")
+
+    print(f"\n--- Comparison ---")
+    print(f"  Difference in alpha: {alpha_sidak - alpha_bonf:.6f}")
+    print(f"  Difference in sample size: {n_bonf - n_sidak:,}")
+    print(f"  → Sidak requires {n_bonf - n_sidak} fewer users")
+    print(f"  → But difference is small ({(n_bonf - n_sidak) / n_bonf:.2%})")
+
+    print(f"\n→ Recommendation: Use Bonferroni (default), simpler to explain!")
+    print()
+
+
 if __name__ == "__main__":
     # Run all examples
     example_1_basic_mde_calculation()
@@ -334,6 +569,9 @@ if __name__ == "__main__":
     example_6_using_proportion_data()
     example_7_correlation_impact()
     example_8_comparison_utility()
+    example_9_multiple_comparisons_planning()
+    example_10_multiple_comparisons_vs_pairwise()
+    example_11_bonferroni_vs_sidak()
 
     print("=" * 70)
     print("All examples completed!")
@@ -344,3 +582,5 @@ if __name__ == "__main__":
     print("  3. Higher baseline proportions need more users")
     print("  4. Smaller MDE requires more users")
     print("  5. correlation=0.7 is typical for good covariate")
+    print("  6. ALWAYS adjust alpha for multiple comparisons (A/B/C, A/B/C/D)")
+    print("  7. Use 'vs_control' comparison for most A/B tests")

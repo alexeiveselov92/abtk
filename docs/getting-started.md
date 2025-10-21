@@ -14,15 +14,32 @@ ABTK is a Python library for analyzing A/B test results. It provides:
 
 ## Installation
 
-```bash
-# Basic installation
-pip install -r requirements.txt
+### For Users
 
-# Development installation (with pytest, black, etc.)
+```bash
+# Basic installation from PyPI
+pip install abtk
+
+# With visualization support (adds matplotlib)
+pip install abtk[viz]
+```
+
+All dependencies (numpy, scipy, pandas, statsmodels) are automatically installed.
+
+### For Developers
+
+If you want to contribute or modify the code:
+
+```bash
+# Clone the repository
+git clone https://github.com/alexeiveselov92/abtk.git
+cd abtk
+
+# Install in editable mode with development dependencies (pytest, black, etc.)
 pip install -e ".[dev]"
 
-# With visualization support
-pip install -e ".[viz]"
+# Or with both dev and visualization dependencies
+pip install -e ".[dev,viz]"
 ```
 
 ## Your First A/B Test

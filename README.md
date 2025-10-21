@@ -21,7 +21,12 @@
 ### Installation
 
 ```bash
-pip install -r requirements.txt
+pip install abtk
+```
+
+For visualization support:
+```bash
+pip install abtk[viz]
 ```
 
 ### Basic Example
@@ -214,15 +219,30 @@ Optional:
 
 ## Installation Options
 
-```bash
-# Basic installation
-pip install -r requirements.txt
+### For Users
 
-# Development installation (with pytest, black, etc.)
-pip install -e ".[dev]"
+```bash
+# Basic installation from PyPI
+pip install abtk
 
 # With visualization support
-pip install -e ".[viz]"
+pip install abtk[viz]
+```
+
+### For Developers
+
+If you want to contribute or modify the code:
+
+```bash
+# Clone the repository
+git clone https://github.com/alexeiveselov92/abtk.git
+cd abtk
+
+# Install in editable mode with development dependencies
+pip install -e ".[dev]"
+
+# Or with visualization support
+pip install -e ".[dev,viz]"
 ```
 
 ## Running Tests

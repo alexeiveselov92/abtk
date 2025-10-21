@@ -457,15 +457,220 @@ n = calculate_sample_size_cuped(..., correlation=actual_corr)
 ### ❌ Mistake 4: Not Accounting for Multiple Comparisons
 
 ```python
-# Bad: Planning for single test but will run 4 variants
+# Bad: Planning for single test but will run multiple variants
 n = calculate_sample_size_ttest(mean=100, std=20, mde=0.05)
 
-# Good: Adjust alpha for multiple tests (Bonferroni)
-alpha_adjusted = 0.05 / 4  # 4 variants = 6 pairwise comparisons
+# Good: Use alpha correction utility
+from utils.sample_size_calculator import adjust_alpha_for_multiple_comparisons
+
+alpha_adjusted = adjust_alpha_for_multiple_comparisons(
+    alpha=0.05,
+    num_groups=4,  # 1 control + 3 treatments
+    comparison_type="vs_control"
+)
 n = calculate_sample_size_ttest(
     mean=100, std=20, mde=0.05, alpha=alpha_adjusted
 )
 ```
+
+---
+
+## Multiple Comparisons in Planning
+
+When testing multiple variants (A/B/C, A/B/C/D), you need **more users** to maintain the same overall significance level.
+
+### Why Multiple Comparisons Matter
+
+**Problem:** Each test has 5% false positive rate → with multiple tests, overall false positive rate increases!
+
+**Example:** A/B/C test (2 comparisons)
+- Each test: 5% chance of false positive
+- Overall: ~10% chance of **at least one** false positive
+
+**Solution:** Adjust alpha BEFORE calculating sample size.
+
+### Calculate Number of Comparisons
+
+```python
+from utils.sample_size_calculator import calculate_number_of_comparisons
+
+# A/B/C test: 1 control + 2 treatments
+num_comp = calculate_number_of_comparisons(
+    num_groups=3,
+    comparison_type="vs_control"  # Compare each treatment to control
+)
+print(f"Number of comparisons: {num_comp}")
+# Output: 2
+
+# A/B/C/D test with all pairwise comparisons
+num_comp = calculate_number_of_comparisons(
+    num_groups=4,
+    comparison_type="pairwise"  # Compare all pairs
+)
+print(f"Number of comparisons: {num_comp}")
+# Output: 6
+```
+
+**Comparison types:**
+- **`vs_control`** (recommended): Compare each treatment to control only
+  - A/B/C: 2 comparisons (B vs A, C vs A)
+  - A/B/C/D: 3 comparisons (B vs A, C vs A, D vs A)
+- **`pairwise`**: Compare all groups with each other
+  - A/B/C: 3 comparisons (A vs B, A vs C, B vs C)
+  - A/B/C/D: 6 comparisons (all pairs)
+
+### Adjust Alpha for Multiple Comparisons
+
+```python
+from utils.sample_size_calculator import adjust_alpha_for_multiple_comparisons
+
+# A/B/C test: 1 control + 2 treatments
+alpha_adj = adjust_alpha_for_multiple_comparisons(
+    alpha=0.05,  # Desired overall alpha
+    num_groups=3,
+    comparison_type="vs_control",
+    method="bonferroni"
+)
+print(f"Adjusted alpha: {alpha_adj:.4f}")
+# Output: 0.0250 (0.05 / 2)
+
+# Now calculate sample size with adjusted alpha
+n = calculate_sample_size_ttest(
+    baseline_mean=100,
+    std=20,
+    mde=0.05,
+    alpha=alpha_adj  # Use corrected alpha!
+)
+print(f"Sample size needed: {n:,}")
+# Output: 2,102 users per group (vs 1,571 without correction)
+```
+
+### Correction Methods
+
+**Bonferroni (default):**
+```python
+alpha_adj = adjust_alpha_for_multiple_comparisons(
+    alpha=0.05,
+    num_groups=3,
+    method="bonferroni"
+)
+# Formula: alpha_adj = alpha / m = 0.05 / 2 = 0.025
+```
+
+**Sidak (less conservative):**
+```python
+alpha_adj = adjust_alpha_for_multiple_comparisons(
+    alpha=0.05,
+    num_groups=3,
+    method="sidak"
+)
+# Formula: alpha_adj = 1 - (1 - alpha)^(1/m) = 0.0253
+```
+
+**Comparison:**
+| Method | Formula | A/B/C (2 comp) | A/B/C/D (3 comp) |
+|--------|---------|----------------|------------------|
+| Bonferroni | α/m | 0.0250 | 0.0167 |
+| Sidak | 1-(1-α)^(1/m) | 0.0253 | 0.0170 |
+
+Sidak is slightly less conservative (more power), but difference is small.
+
+### Complete Workflow Example
+
+```python
+from utils.sample_size_calculator import (
+    adjust_alpha_for_multiple_comparisons,
+    calculate_sample_size_ttest
+)
+
+# Step 1: Define experiment design
+num_groups = 4  # 1 control + 3 treatments
+comparison_type = "vs_control"  # Compare each treatment to control
+overall_alpha = 0.05  # Overall significance level
+
+# Step 2: Adjust alpha
+alpha_adj = adjust_alpha_for_multiple_comparisons(
+    alpha=overall_alpha,
+    num_groups=num_groups,
+    comparison_type=comparison_type
+)
+print(f"Adjusted alpha: {alpha_adj:.4f}")
+# Output: 0.0167 (0.05 / 3 comparisons)
+
+# Step 3: Calculate sample size
+n = calculate_sample_size_ttest(
+    baseline_mean=100,
+    std=20,
+    mde=0.05,
+    alpha=alpha_adj  # Use corrected alpha
+)
+print(f"Need {n:,} users per group")
+# Output: 2,418 users per group
+
+# Step 4: Calculate total users
+total_users = n * num_groups
+print(f"Total users needed: {total_users:,}")
+# Output: 9,672 total users
+
+# Compare with uncorrected (WRONG!)
+n_wrong = calculate_sample_size_ttest(
+    baseline_mean=100,
+    std=20,
+    mde=0.05,
+    alpha=0.05  # Not corrected!
+)
+print(f"\nWithout correction (WRONG): {n_wrong:,} per group")
+print(f"Difference: {n - n_wrong:,} extra users per group needed")
+# Output: Without correction: 1,571
+#         Difference: 847 extra users per group needed
+```
+
+### Sample Size Impact
+
+**Impact of multiple comparisons on sample size:**
+
+| Test Type | Comparisons | Alpha Adjustment | Sample Size per Group | Increase |
+|-----------|-------------|------------------|------------------------|----------|
+| A/B | 1 | 0.0500 | 1,571 | Baseline |
+| A/B/C | 2 | 0.0250 | 2,102 | +34% |
+| A/B/C/D | 3 | 0.0167 | 2,418 | +54% |
+| A/B/C/D/E | 4 | 0.0125 | 2,653 | +69% |
+
+### When to Use Correction
+
+**Always use correction when:**
+- Testing multiple variants (A/B/C, A/B/C/D, etc.)
+- Want to control family-wise error rate (FWER)
+- Planning sample size BEFORE running test
+
+**Use `vs_control` comparison when:**
+- Each treatment is independent
+- Only care about "is treatment better than control?"
+- Most common for A/B tests
+
+**Use `pairwise` comparison when:**
+- Need to compare all treatments with each other
+- Want to rank treatments
+- Less common, more conservative
+
+### Planning vs Post-hoc Correction
+
+**Planning (use this function):**
+```python
+# BEFORE running test: adjust alpha for sample size calculation
+alpha_adj = adjust_alpha_for_multiple_comparisons(alpha=0.05, num_groups=3)
+n = calculate_sample_size_ttest(..., alpha=alpha_adj)
+```
+
+**Post-hoc (use after running test):**
+```python
+# AFTER running test: adjust p-values
+from utils.corrections import adjust_pvalues
+results = test.compare([control, t1, t2])
+adjusted_results = adjust_pvalues(results, method="bonferroni")
+```
+
+Both approaches control FWER, but planning approach is recommended!
 
 ---
 
@@ -532,6 +737,8 @@ print(f"Experiment will run {days:.1f} days")
 ## Summary
 
 **Key functions:**
+
+**Sample Size & MDE:**
 - `calculate_mde_ttest()` - What effect can we detect?
 - `calculate_sample_size_ttest()` - How many users needed?
 - `calculate_mde_cuped()` - MDE with variance reduction
@@ -539,12 +746,17 @@ print(f"Experiment will run {days:.1f} days")
 - `calculate_mde_proportions()` - MDE for binary metrics
 - `calculate_sample_size_proportions()` - Sample size for proportions
 
+**Multiple Comparisons:**
+- `calculate_number_of_comparisons()` - How many comparisons in multi-variant test?
+- `adjust_alpha_for_multiple_comparisons()` - Adjust alpha for planning multi-variant tests
+
 **Remember:**
 1. Use historical data when available
 2. CUPED can reduce sample size by 50%+ (if correlation > 0.7)
 3. Plan for total users (both groups!)
 4. Check correlation before using CUPED
-5. Account for attrition and multiple comparisons
+5. **Always adjust alpha for multiple comparisons** (A/B/C, A/B/C/D, etc.)
+6. Account for attrition
 
 ---
 
