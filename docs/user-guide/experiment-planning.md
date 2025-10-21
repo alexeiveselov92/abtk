@@ -734,6 +734,312 @@ print(f"Experiment will run {days:.1f} days")
 
 ---
 
+## Cluster-Randomized Experiments
+
+For cluster-randomized experiments (geo tests, store tests), clustering reduces effective sample size. You need to account for the **design effect (DE)** when planning.
+
+### Key Concept: Design Effect
+
+**Formula:**
+```
+DE = 1 + (m̄ - 1) × ICC
+```
+
+where:
+- `m̄` = average cluster size
+- `ICC` = intra-class correlation (how similar observations within a cluster are)
+
+**Impact:**
+```
+Effective Sample Size = Total Observations / Design Effect
+```
+
+**Example:**
+- Total observations: n = 1000
+- Design Effect: DE = 2.0
+- Effective sample size: n_eff = 1000 / 2.0 = 500
+
+→ You have the statistical power of only 500 independent observations!
+
+### Estimating ICC
+
+ICC typically ranges 0.01-0.20 for cluster-randomized experiments:
+
+**Geo experiments (cities):**
+- ICC ≈ 0.05-0.15 (users in same city are somewhat similar)
+
+**Store experiments:**
+- ICC ≈ 0.01-0.10 (customers in same store have some similarities)
+
+**School experiments:**
+- ICC ≈ 0.10-0.20 (students in same class are more similar)
+
+You can estimate ICC from historical data:
+
+```python
+from utils.cluster_utils import calculate_icc
+import numpy as np
+
+# Historical data with cluster assignments
+icc = calculate_icc(historical_data, cluster_ids, method="anova")
+print(f"Estimated ICC: {icc:.3f}")
+
+if icc < 0.01:
+    print("→ Low ICC: clustering doesn't matter much")
+elif icc < 0.15:
+    print("→ Moderate ICC: account for clustering")
+else:
+    print("→ High ICC: clustering strongly matters")
+```
+
+### Sample Size for Cluster Experiments
+
+**Step 1: Calculate sample size as if individual randomization**
+
+```python
+from utils.sample_size_calculator import calculate_sample_size_ttest
+
+# Calculate as if no clustering
+n_individual = calculate_sample_size_ttest(
+    mean=100,
+    std=20,
+    mde=0.05,
+    alpha=0.05,
+    power=0.8
+)
+print(f"Individual randomization: {n_individual:,} per group")
+# 1,571 per group
+```
+
+**Step 2: Account for design effect**
+
+```python
+from utils.cluster_utils import calculate_design_effect
+
+# Assume: 10 clusters, 200 users per cluster
+cluster_sizes = [200] * 10
+icc = 0.10  # Estimated from historical data
+
+de = calculate_design_effect(cluster_sizes, icc)
+print(f"Design Effect: {de:.2f}")
+# DE = 1 + (200 - 1) × 0.10 = 20.9
+
+# Adjust sample size
+n_cluster = int(n_individual * de)
+print(f"Cluster randomization: {n_cluster:,} per group")
+# 32,835 per group (20.9× more!)
+```
+
+**Step 3: Determine number of clusters**
+
+```python
+# Given:
+# - Need 32,835 observations per group
+# - Have 10 clusters available
+# - Each cluster has ~2,000 users
+
+observations_per_cluster = 32835 / 10
+print(f"Need {observations_per_cluster:,.0f} observations per cluster")
+# 3,284 per cluster
+
+# Check if feasible
+available_per_cluster = 2000
+if available_per_cluster < observations_per_cluster:
+    print(f"⚠️ Not enough users per cluster!")
+    print(f"Options:")
+    print(f"  1. Increase number of clusters")
+    print(f"  2. Accept lower power")
+    print(f"  3. Detect larger MDE")
+```
+
+### MDE for Cluster Experiments
+
+**What effect can we detect with cluster randomization?**
+
+```python
+from utils.sample_size_calculator import calculate_mde_ttest
+
+# Given:
+# - 10 clusters per group
+# - 2,000 users per cluster
+# - ICC = 0.10
+
+n_total_per_group = 10 * 2000  # 20,000 observations
+cluster_sizes = [2000] * 10
+
+# Calculate design effect
+from utils.cluster_utils import calculate_design_effect
+de = calculate_design_effect(cluster_sizes, icc=0.10)
+
+# Effective sample size
+n_eff = n_total_per_group / de
+print(f"Effective n: {n_eff:,.0f} (out of {n_total_per_group:,})")
+# Effective n: 957 (out of 20,000)
+
+# Calculate MDE using effective sample size
+mde = calculate_mde_ttest(
+    mean=100,
+    std=20,
+    n=n_eff,  # Use effective n!
+    alpha=0.05,
+    power=0.8
+)
+print(f"MDE: {mde:.2%}")
+# 6.3% (vs 3.5% for individual randomization)
+```
+
+### How Many Clusters Do You Need?
+
+**Rule of thumb:** At least 5-10 clusters per group, preferably 10+
+
+**Power depends more on NUMBER OF CLUSTERS than cluster size:**
+
+```python
+# Scenario 1: Few large clusters (BAD)
+cluster_sizes_1 = [1000] * 5  # 5 clusters, 1000 each
+de_1 = calculate_design_effect(cluster_sizes_1, icc=0.10)
+n_eff_1 = sum(cluster_sizes_1) / de_1
+print(f"Scenario 1 (5×1000): Effective n = {n_eff_1:.0f}")
+# Effective n ≈ 49 (very low!)
+
+# Scenario 2: Many small clusters (BETTER)
+cluster_sizes_2 = [100] * 50  # 50 clusters, 100 each
+de_2 = calculate_design_effect(cluster_sizes_2, icc=0.10)
+n_eff_2 = sum(cluster_sizes_2) / de_2
+print(f"Scenario 2 (50×100): Effective n = {n_eff_2:.0f}")
+# Effective n ≈ 456 (much better!)
+
+# Both have 5000 total observations, but scenario 2 has 9× more power!
+```
+
+**Key insight:** 50 clusters × 100 obs >> 5 clusters × 1000 obs
+
+### Optimal Cluster Size
+
+**Trade-off:**
+- Larger clusters → Higher design effect → Lower power
+- More clusters → Higher cost/complexity
+
+**Optimal strategy:**
+1. Maximize number of clusters (>10 per group)
+2. Keep cluster sizes moderate (50-500 observations)
+3. Aim for balanced cluster sizes (CV < 0.5)
+
+**Example planning:**
+
+```python
+# Goal: Detect 5% effect with 80% power
+# Constraints: Can randomize up to 20 cities per group
+
+# Option 1: Use all 20 cities with ~200 users each
+n_clusters = 20
+cluster_size = 200
+icc = 0.10
+
+cluster_sizes = [cluster_size] * n_clusters
+de = calculate_design_effect(cluster_sizes, icc)
+n_total = n_clusters * cluster_size
+n_eff = n_total / de
+
+mde = calculate_mde_ttest(mean=100, std=20, n=n_eff)
+print(f"Option 1: {n_clusters} clusters × {cluster_size} users")
+print(f"  Design Effect: {de:.2f}")
+print(f"  Effective n: {n_eff:.0f}")
+print(f"  MDE: {mde:.2%}")
+
+# Option 2: Use fewer cities with more users
+n_clusters = 10
+cluster_size = 400
+
+cluster_sizes = [cluster_size] * n_clusters
+de = calculate_design_effect(cluster_sizes, icc)
+n_total = n_clusters * cluster_size
+n_eff = n_total / de
+
+mde = calculate_mde_ttest(mean=100, std=20, n=n_eff)
+print(f"\nOption 2: {n_clusters} clusters × {cluster_size} users")
+print(f"  Design Effect: {de:.2f}")
+print(f"  Effective n: {n_eff:.0f}")
+print(f"  MDE: {mde:.2%}")
+
+# Option 1 has better power despite same total users!
+```
+
+### Quick Reference: Design Effect by ICC
+
+For planning, here's design effect for common scenarios:
+
+| Cluster Size | ICC=0.01 | ICC=0.05 | ICC=0.10 | ICC=0.20 |
+|--------------|----------|----------|----------|----------|
+| 50 | 1.5 | 3.5 | 5.9 | 10.8 |
+| 100 | 2.0 | 6.0 | 10.9 | 20.8 |
+| 200 | 3.0 | 11.0 | 20.9 | 40.8 |
+| 500 | 6.0 | 26.0 | 50.9 | 100.8 |
+| 1000 | 11.0 | 51.0 | 100.9 | 200.8 |
+
+**How to use this table:**
+1. Estimate ICC from historical data
+2. Decide on cluster size (based on constraints)
+3. Look up design effect
+4. Multiply sample size by design effect
+
+**Example:**
+- Need 1000 users for individual randomization
+- Have clusters of size 200
+- ICC = 0.10
+- Design effect = 20.9
+- Need 1000 × 20.9 = 20,900 users for cluster randomization
+- With 10 clusters → 2,090 users per cluster
+
+### Variance Reduction with Covariates
+
+CUPED/ANCOVA can help reduce required sample size for cluster experiments too!
+
+```python
+# Cluster experiment with covariate
+from utils.sample_size_calculator import calculate_sample_size_cuped
+
+# Without covariate
+n_no_cov = calculate_sample_size_ttest(mean=100, std=20, mde=0.05)
+
+# With covariate (correlation = 0.7)
+n_with_cov = calculate_sample_size_cuped(
+    mean=100,
+    std=20,
+    mde=0.05,
+    correlation=0.7  # Between current and historical metric
+)
+
+print(f"Without covariate: {n_no_cov:,} per group")
+print(f"With covariate: {n_with_cov:,} per group")
+reduction = 1 - (n_with_cov / n_no_cov)
+print(f"Reduction: {reduction:.1%}")
+
+# Then multiply by design effect
+de = calculate_design_effect([200]*10, icc=0.10)
+n_cluster_with_cov = int(n_with_cov * de)
+print(f"\nCluster + covariate: {n_cluster_with_cov:,} per group")
+```
+
+**Recommendation:** Use `ClusteredAncovaTest` for cluster experiments with covariates!
+
+### Cluster Experiments Checklist
+
+Before launching a cluster-randomized experiment:
+
+- [ ] Estimate ICC from historical data (or use conservative estimate)
+- [ ] Calculate design effect based on planned cluster sizes
+- [ ] Determine effective sample size
+- [ ] Check if you have enough clusters (5+ per group minimum)
+- [ ] Verify cluster sizes are balanced (CV < 0.5)
+- [ ] Consider covariates to reduce required sample size
+- [ ] Plan for ClusteredTTest or ClusteredAncovaTest analysis
+- [ ] Document ICC assumption for future reference
+
+**See also:** [Cluster Experiments Guide](cluster-experiments.md) for complete details
+
+---
+
 ## Summary
 
 **Key functions:**
