@@ -16,7 +16,8 @@ These utilities are used across:
 from utils.bootstrap.generator import (
     generate_bootstrap_samples,
     generate_paired_bootstrap_samples,
-    calculate_balanced_stratum_weights
+    calculate_balanced_stratum_weights,
+    generate_cluster_bootstrap_samples
 )
 from utils.bootstrap.statistics import (
     calculate_bootstrap_ci,
@@ -31,6 +32,7 @@ __all__ = [
     'generate_bootstrap_samples',
     'generate_paired_bootstrap_samples',
     'calculate_balanced_stratum_weights',
+    'generate_cluster_bootstrap_samples',
 
     # Statistics
     'calculate_bootstrap_ci',

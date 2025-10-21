@@ -547,3 +547,111 @@ def calculate_balanced_stratum_weights(
     }
 
     return stratum_weights1, stratum_weights2
+
+
+def generate_cluster_bootstrap_samples(
+    sample: SampleData,
+    n_samples: int = 1000,
+    random_seed: Optional[int] = None
+) -> np.ndarray:
+    """
+    Generate cluster bootstrap samples by resampling clusters (not individuals).
+
+    In cluster bootstrap, we resample CLUSTERS with replacement, not individual
+    observations. This preserves within-cluster correlation structure and is
+    appropriate for cluster-randomized experiments.
+
+    Parameters
+    ----------
+    sample : SampleData
+        The sample data to bootstrap from (must have clusters attribute)
+    n_samples : int, default=1000
+        Number of bootstrap samples to generate
+    random_seed : Optional[int], default=None
+        Random seed for reproducibility
+
+    Returns
+    -------
+    np.ndarray
+        Bootstrap statistics array of shape (n_samples,) containing the statistic
+        (mean) for each bootstrap sample
+
+    Raises
+    ------
+    ValueError
+        If sample.clusters is None
+
+    Examples
+    --------
+    >>> # Cluster-randomized experiment: 5 cities
+    >>> sample = SampleData(
+    ...     data=[100, 105, 110, 95, 98, 102, 108, 112],
+    ...     clusters=[1, 1, 1, 2, 2, 3, 3, 3],  # 3 clusters
+    ...     name="Treatment"
+    ... )
+    >>> boot_stats = generate_cluster_bootstrap_samples(sample, n_samples=1000)
+    >>> boot_stats.shape
+    (1000,)
+
+    Notes
+    -----
+    Cluster bootstrap algorithm:
+    1. Identify unique clusters in the sample
+    2. For each bootstrap iteration:
+       a. Randomly sample clusters WITH REPLACEMENT
+       b. For each sampled cluster, take ALL observations from that cluster
+       c. Calculate statistic (mean) on combined observations
+    3. Return array of bootstrap statistics
+
+    **Why cluster bootstrap?**
+    - Preserves within-cluster correlation (ICC)
+    - Appropriate for cluster-randomized designs
+    - More conservative than individual-level bootstrap when ICC > 0
+
+    **Example:**
+    Original data: Cluster 1 [100, 105], Cluster 2 [95, 98], Cluster 3 [102, 108]
+    Bootstrap sample might be: [Cluster 1, Cluster 1, Cluster 3]
+    → observations: [100, 105, 100, 105, 102, 108]
+
+    **Comparison with individual bootstrap:**
+    - Individual bootstrap: Resamples observations, breaks cluster structure
+    - Cluster bootstrap: Resamples clusters, preserves cluster structure
+    - Cluster bootstrap typically has wider CI (accounts for clustering)
+    """
+    if sample.clusters is None:
+        raise ValueError(
+            "Cluster bootstrap requires clusters attribute. "
+            "Please provide clusters when creating SampleData."
+        )
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    # Get unique clusters
+    unique_clusters = np.unique(sample.clusters)
+    n_clusters = len(unique_clusters)
+
+    # Initialize array for bootstrap statistics
+    boot_stats = np.empty(n_samples)
+
+    # For each bootstrap iteration
+    for i in range(n_samples):
+        # Resample clusters WITH REPLACEMENT
+        sampled_clusters = np.random.choice(
+            unique_clusters,
+            size=n_clusters,
+            replace=True
+        )
+
+        # Collect all observations from sampled clusters
+        boot_data = []
+        for cluster_id in sampled_clusters:
+            # Get all observations from this cluster
+            cluster_mask = sample.clusters == cluster_id
+            cluster_data = sample.data[cluster_mask]
+            boot_data.extend(cluster_data)
+
+        # Calculate statistic (mean) for this bootstrap sample
+        boot_stats[i] = np.mean(boot_data)
+
+    return boot_stats
