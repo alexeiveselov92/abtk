@@ -13,6 +13,8 @@ Available tests:
 - AncovaTest: ANCOVA / Regression Adjustment with multiple covariates
 - OLSTest: Alias for AncovaTest (OLS regression with covariates)
 - ClusteredTTest: T-test for cluster-randomized experiments (cluster-robust SE)
+- ClusteredAncovaTest: ANCOVA for cluster-randomized experiments (covariates + cluster-robust SE)
+- ClusteredOLSTest: Alias for ClusteredAncovaTest
 """
 
 from .ttest import TTest
@@ -21,6 +23,7 @@ from .cuped_ttest import CupedTTest
 from .ztest import ZTest
 from .ancova_test import AncovaTest
 from .clustered_ttest import ClusteredTTest
+from .clustered_ancova_test import ClusteredAncovaTest, ClusteredOLSTest
 
 # Alias for practitioners who prefer "OLS" terminology
 OLSTest = AncovaTest
@@ -33,4 +36,6 @@ __all__ = [
     'AncovaTest',
     'OLSTest',  # Alias
     'ClusteredTTest',
+    'ClusteredAncovaTest',
+    'ClusteredOLSTest',  # Alias
 ]
