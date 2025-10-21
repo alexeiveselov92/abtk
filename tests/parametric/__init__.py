@@ -12,6 +12,7 @@ Available tests:
 - ZTest: Z-test for proportions
 - AncovaTest: ANCOVA / Regression Adjustment with multiple covariates
 - OLSTest: Alias for AncovaTest (OLS regression with covariates)
+- ClusteredTTest: T-test for cluster-randomized experiments (cluster-robust SE)
 """
 
 from .ttest import TTest
@@ -19,6 +20,7 @@ from .paired_ttest import PairedTTest
 from .cuped_ttest import CupedTTest
 from .ztest import ZTest
 from .ancova_test import AncovaTest
+from .clustered_ttest import ClusteredTTest
 
 # Alias for practitioners who prefer "OLS" terminology
 OLSTest = AncovaTest
@@ -30,4 +32,5 @@ __all__ = [
     'ZTest',
     'AncovaTest',
     'OLSTest',  # Alias
+    'ClusteredTTest',
 ]
