@@ -1021,7 +1021,7 @@ n_cluster_with_cov = int(n_with_cov * de)
 print(f"\nCluster + covariate: {n_cluster_with_cov:,} per group")
 ```
 
-**Recommendation:** Use `ClusteredAncovaTest` for cluster experiments with covariates!
+**Recommendation:** Use `ClusteredAncovaTest` (or `ClusteredOLSTest`) for cluster experiments with covariates!
 
 ### Cluster Experiments Checklist
 
@@ -1033,7 +1033,7 @@ Before launching a cluster-randomized experiment:
 - [ ] Check if you have enough clusters (5+ per group minimum)
 - [ ] Verify cluster sizes are balanced (CV < 0.5)
 - [ ] Consider covariates to reduce required sample size
-- [ ] Plan for ClusteredTTest or ClusteredAncovaTest analysis
+- [ ] Plan for ClusteredTTest or ClusteredAncovaTest (ClusteredOLSTest) analysis
 - [ ] Document ICC assumption for future reference
 
 **See also:** [Cluster Experiments Guide](cluster-experiments.md) for complete details

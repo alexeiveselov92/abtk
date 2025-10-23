@@ -12,7 +12,7 @@ This file demonstrates all 4 cluster tests with realistic examples:
 
 import numpy as np
 from core.data_types import SampleData
-from tests.parametric import ClusteredTTest, ClusteredAncovaTest, ClusteredZTest
+from tests.parametric import ClusteredTTest, ClusteredAncovaTest, ClusteredZTest  # ClusteredAncovaTest also available as ClusteredOLSTest
 from tests.nonparametric import ClusteredBootstrapTest
 from utils.cluster_utils import calculate_icc, calculate_design_effect
 

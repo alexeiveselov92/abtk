@@ -11,7 +11,7 @@ This example demonstrates:
 
 import numpy as np
 from core.data_types import SampleData
-from tests.parametric import AncovaTest
+from tests.parametric import AncovaTest  # Also available as: from tests.parametric import OLSTest
 from utils.corrections import adjust_pvalues
 
 

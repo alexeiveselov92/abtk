@@ -69,7 +69,7 @@ START: Is your experiment cluster-randomized?
 | **ZTest** | Proportions | Large sample | No | CTR, conversion rate |
 | **PairedTTest** | Continuous | Normality, Pairing | Optional | Matched pairs design |
 | **CupedTTest** | Continuous | Normality | Yes (1) | Variance reduction with 1 covariate |
-| **AncovaTest** | Continuous | Linearity | Yes (many) | Multiple covariates, diagnostics |
+| **AncovaTest** (alias: **OLSTest**) | Continuous | Linearity | Yes (many) | Multiple covariates, diagnostics |
 | **BootstrapTest** | Continuous | None | No | Non-normal, outliers, small samples |
 | **PairedBootstrapTest** | Continuous | None | No | Matched pairs, non-parametric |
 | **PostNormedBootstrapTest** | Continuous | None | Yes (1) | Bootstrap + variance reduction |
@@ -79,7 +79,7 @@ START: Is your experiment cluster-randomized?
 | Test | Data Type | Assumptions | Covariates | When to Use |
 |------|-----------|-------------|------------|-------------|
 | **ClusteredTTest** | Continuous | Normality | No | Geo/store experiments, normal data |
-| **ClusteredAncovaTest** | Continuous | Linearity | Yes (many) | Cluster + covariates for variance reduction |
+| **ClusteredAncovaTest** (alias: **ClusteredOLSTest**) | Continuous | Linearity | Yes (many) | Cluster + covariates for variance reduction |
 | **ClusteredZTest** | Proportions | 0.05 < p < 0.95 | No | CTR/CVR in geo experiments |
 | **ClusteredBootstrapTest** | Continuous | None | No | Cluster + non-normal/outliers |
 
@@ -225,7 +225,9 @@ results = test.compare([control, treatment])
 
 ---
 
-### 5. AncovaTest - ANCOVA / Regression Adjustment
+### 5. AncovaTest (OLSTest) - ANCOVA / Regression Adjustment
+
+> **Note:** Also available as `OLSTest` - both names reference the same class.
 
 **Use when:**
 - Have multiple covariates (pre-experiment variables)
@@ -235,7 +237,7 @@ results = test.compare([control, treatment])
 
 **Example:**
 ```python
-from tests.parametric import AncovaTest
+from tests.parametric import AncovaTest  # or: from tests.parametric import OLSTest
 import numpy as np
 
 control = SampleData(

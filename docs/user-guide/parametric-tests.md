@@ -12,7 +12,7 @@ ABTK provides 5 parametric tests:
 | **PairedTTest** | Matched pairs | Normality of differences | Removes between-subject variability |
 | **CupedTTest** | A/B with 1 covariate | Normality | Variance reduction |
 | **ZTest** | Proportions (CTR, CVR) | Large sample | Binary outcomes |
-| **AncovaTest** | Multiple covariates | Linearity | Maximum variance reduction + diagnostics |
+| **AncovaTest** (alias: **OLSTest**) | Multiple covariates | Linearity | Maximum variance reduction + diagnostics |
 
 ---
 
@@ -432,7 +432,9 @@ treatment_bounce = ProportionData(successes=2900, trials=10000, name="Treatment"
 
 ---
 
-## AncovaTest - ANCOVA / Regression Adjustment
+## AncovaTest (OLSTest) - ANCOVA / Regression Adjustment
+
+> **Note:** Available as both `AncovaTest` (statistical name) and `OLSTest` (practitioner name) - same class, different aliases.
 
 See [ANCOVA Guide](ancova-guide.md) for comprehensive documentation.
 
@@ -448,7 +450,7 @@ See [ANCOVA Guide](ancova-guide.md) for comprehensive documentation.
 ### Basic Example
 
 ```python
-from tests.parametric import AncovaTest
+from tests.parametric import AncovaTest  # or: from tests.parametric import OLSTest
 import numpy as np
 
 n = 200

@@ -2,6 +2,8 @@
 
 **ANCOVA (Analysis of Covariance)** is the most powerful variance reduction method in ABTK. It uses multiple covariates and provides comprehensive diagnostics to validate assumptions.
 
+> **Note:** ABTK provides `AncovaTest` (statistical name) and `OLSTest` (practitioner name) as aliases for the same test. Both names reference the exact same class - use whichever terminology you prefer.
+
 ## Overview
 
 **What is ANCOVA?**
@@ -58,7 +60,7 @@ Y = β₀ + β₁*Treatment + β₂*Covariate₁ + β₃*Covariate₂ + ... + ε
 
 ```python
 from core.data_types import SampleData
-from tests.parametric import AncovaTest
+from tests.parametric import AncovaTest  # or: from tests.parametric import OLSTest
 import numpy as np
 
 # Create data with multiple covariates
@@ -339,7 +341,7 @@ ANCOVA increases **statistical power** through variance reduction:
 ```python
 import numpy as np
 from core.data_types import SampleData
-from tests.parametric import AncovaTest, TTest
+from tests.parametric import AncovaTest, TTest  # AncovaTest also available as OLSTest
 
 np.random.seed(42)
 n = 500

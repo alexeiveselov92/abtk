@@ -324,7 +324,7 @@ Rule of thumb: More samples = more accurate, but slower.
 2. **Use parametric tests** (TTest faster than Bootstrap)
 3. **Disable validation** in ANCOVA:
 ```python
-test = AncovaTest(validate_assumptions=False)
+test = AncovaTest(validate_assumptions=False)  # AncovaTest also available as OLSTest
 ```
 
 ---

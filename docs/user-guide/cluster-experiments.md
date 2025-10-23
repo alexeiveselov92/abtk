@@ -222,7 +222,7 @@ print(f"Design Effect: {result.method_params['design_effect_control']:.2f}")
 
 ---
 
-### 2. ClusteredAncovaTest
+### 2. ClusteredAncovaTest (ClusteredOLSTest)
 
 **Use for:** Continuous metrics with covariates (variance reduction)
 
@@ -242,7 +242,7 @@ Y_ij = β₀ + β₁×Treatment_j + β₂×X1_ij + β₃×X2_ij + ... + ε_ij
 
 **Example:**
 ```python
-from tests.parametric import ClusteredAncovaTest
+from tests.parametric import ClusteredAncovaTest  # or: from tests.parametric import ClusteredOLSTest
 
 # Same as ClusteredTTest but with pre-experiment revenue as covariate
 control = SampleData(
@@ -271,7 +271,7 @@ print(f"CI width: {result.ci_length:.4f}")  # Narrower than ClusteredTTest!
 print(f"VIF: {result.method_params['vif_values']}")  # Check multicollinearity
 ```
 
-**Alias:** `ClusteredOLSTest` (same as `ClusteredAncovaTest`)
+> **Note:** Also available as `ClusteredOLSTest` - both names reference the same class.
 
 ---
 
@@ -563,7 +563,7 @@ Do you have cluster-randomized design?
 | Scenario | Test | Assumptions |
 |----------|------|-------------|
 | Cluster + continuous + normal | ClusteredTTest | Normality |
-| Cluster + continuous + covariates | ClusteredAncovaTest | Normality, linear relationship |
+| Cluster + continuous + covariates | ClusteredAncovaTest (ClusteredOLSTest) | Normality, linear relationship |
 | Cluster + proportions | ClusteredZTest | 0.05 < p < 0.95 |
 | Cluster + non-normal | ClusteredBootstrapTest | None |
 | Cluster + outliers | ClusteredBootstrapTest | None |
@@ -632,7 +632,7 @@ print(f"  N Clusters: {result.method_params['n_clusters_control']}")
 ### Example 2: Store Experiment with Covariates
 
 ```python
-from tests.parametric import ClusteredAncovaTest
+from tests.parametric import ClusteredAncovaTest  # or: from tests.parametric import ClusteredOLSTest
 
 # Stores with historical sales as covariate
 control = SampleData(
