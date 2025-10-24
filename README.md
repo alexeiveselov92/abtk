@@ -9,7 +9,8 @@
 ## Key Features
 
 - **12 Statistical Tests** - Parametric (T-Test, Z-Test, CUPED, ANCOVA) and Nonparametric (Bootstrap)
-- **Cluster-Randomized Experiments** - Geo experiments, store tests, market-level randomization (NEW in v0.3.0)
+- **Cluster-Randomized Experiments** - Geo experiments, store tests, market-level randomization
+- **Simulation-Based Power Analysis** - PowerAnalyzer for experiment planning (NEW in v0.4.0)
 - **Variance Reduction** - CUPED, ANCOVA with multiple covariates
 - **Multiple Comparisons** - Bonferroni, Holm, Benjamini-Hochberg, and more
 - **Quantile Analysis** - Analyze treatment effects across the distribution
@@ -234,6 +235,82 @@ print(result.to_dataframe())
 sig_quantiles = result.significant_quantiles()
 print(f"Effects significant at: {sig_quantiles}")
 ```
+
+## Experiment Planning
+
+### Analytical Approach (Fast)
+
+For quick TTest/ZTest/CUPED planning, use analytical formulas:
+
+```python
+from utils.sample_size_calculator import calculate_mde_ttest, calculate_sample_size_ttest
+
+# Question 1: What can I detect with 1000 users?
+mde = calculate_mde_ttest(mean=100, std=20, n=1000)
+print(f"Can detect {mde:.2%} effect")  # 3.5%
+
+# Question 2: How many users to detect 5% effect?
+n = calculate_sample_size_ttest(mean=100, std=20, mde=0.05)
+print(f"Need {n:,} users per group")  # 1,571
+```
+
+### Simulation-Based Power Analysis (NEW in v0.4.0)
+
+For **Bootstrap tests** and **cluster experiments**, use `PowerAnalyzer` - the ONLY way to get MDE when no analytical formula exists:
+
+```python
+from core.data_types import SampleData
+from tests.nonparametric import BootstrapTest
+from utils.power_analysis import PowerAnalyzer
+import numpy as np
+
+# Historical data (NOT split)
+historical = SampleData(data=last_month_revenue)
+
+# Configure test
+test = BootstrapTest(alpha=0.05, n_bootstrap=500, test_type="relative")
+
+# Create power analyzer
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Calculate MDE for 80% power (ONLY option for Bootstrap!)
+mde = analyzer.minimum_detectable_effect(
+    sample=historical,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+print(f"MDE: {mde:.1%}")  # e.g., "MDE: 8.5%"
+
+# Or estimate power for planned effect
+power = analyzer.power_analysis(
+    sample=historical,
+    effect=0.05,  # 5% increase
+    effect_type="multiplicative"
+)
+print(f"Power: {power:.1%}")  # e.g., "Power: 65.3%"
+```
+
+**Key advantages of PowerAnalyzer:**
+- ✅ Works with **ALL 12 tests** (including Bootstrap, ClusteredBootstrap)
+- ✅ **ONLY way** to get MDE for Bootstrap tests (no analytical formula exists)
+- ✅ Automatic data splitting (handles simple/cluster/paired designs)
+- ✅ Empirical power estimates (no distributional assumptions)
+
+**When to use:**
+
+| Test Type | Use Analytical | Use Simulation (PowerAnalyzer) |
+|-----------|----------------|--------------------------------|
+| TTest, ZTest | ✅ Fast (~instant) | ⚠️ Slower (~10 sec) |
+| CupedTTest | ✅ Fast (with correlation) | ✅ Works (automatic) |
+| PairedTTest | ✅ Fast | ✅ Works (automatic) |
+| AncovaTest | ❌ Complex | ✅ Works (automatic) |
+| BootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| PairedBootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| PostNormedBootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| ClusteredBootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| Any cluster test | ⚠️ Need ICC | ✅ Easier, automatic |
+
+See [Experiment Planning Guide](docs/user-guide/experiment-planning.md) for complete details.
 
 ## Test Selection Decision Tree
 
