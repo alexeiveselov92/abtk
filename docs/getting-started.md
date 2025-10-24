@@ -6,8 +6,9 @@ Welcome to ABTK (A/B Testing Toolkit)! This guide will help you get started with
 
 ABTK is a Python library for analyzing A/B test results. It provides:
 
-- **8 statistical tests** (parametric and nonparametric)
+- **12 statistical tests** (parametric, nonparametric, and cluster-randomized)
 - **Variance reduction techniques** (CUPED, ANCOVA)
+- **Simulation-based power analysis** (PowerAnalyzer for experiment planning)
 - **Multiple comparisons correction** (Bonferroni, Benjamini-Hochberg, etc.)
 - **Quantile treatment effect analysis**
 - **Unified interface** - all tests return the same `TestResult` format
@@ -361,6 +362,58 @@ for r in adjusted:
     if r.reject:
         print(f"{r.name_2} is significantly different!")
 ```
+
+### Workflow 4: Experiment Planning with Simulation
+
+For experiment planning, use `PowerAnalyzer` to estimate power or calculate MDE through Monte Carlo simulation:
+
+```python
+from core.data_types import SampleData
+from tests.nonparametric import BootstrapTest
+from utils.power_analysis import PowerAnalyzer
+import numpy as np
+
+# Historical data (NOT split)
+historical = SampleData(data=last_month_revenue)
+
+# Configure test
+test = BootstrapTest(alpha=0.05, n_bootstrap=500, test_type="relative")
+
+# Create power analyzer
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Calculate MDE for 80% power (ONLY option for Bootstrap!)
+mde = analyzer.minimum_detectable_effect(
+    sample=historical,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+print(f"MDE: {mde:.1%}")  # e.g., "MDE: 8.5%"
+
+# Or estimate power for planned effect
+power = analyzer.power_analysis(
+    sample=historical,
+    effect=0.05,  # 5% increase
+    effect_type="multiplicative"
+)
+print(f"Power: {power:.1%}")  # e.g., "Power: 65.3%"
+```
+
+**When to use PowerAnalyzer:**
+- ✅ Planning **BootstrapTest** experiments (ONLY option - no analytical formula)
+- ✅ Planning cluster experiments (easier than analytical ICC calculations)
+- ✅ Want empirical power estimates
+
+**For quick TTest/ZTest planning, use analytical formulas:**
+```python
+from utils.sample_size_calculator import calculate_mde_ttest
+
+# Instant MDE calculation (analytical formula)
+mde = calculate_mde_ttest(mean=100, std=20, n=1000)
+print(f"MDE: {mde:.2%}")  # e.g., "MDE: 3.50%" (instant!)
+```
+
+**See [Experiment Planning Guide](user-guide/experiment-planning.md) for complete details.**
 
 ## Getting Help
 

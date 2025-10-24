@@ -78,3 +78,6 @@ venv.bak/
 CLAUDE.md
 .claude/
 TODO.md
+
+# Development files
+other_lib_modules/

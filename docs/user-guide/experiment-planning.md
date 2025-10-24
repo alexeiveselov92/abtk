@@ -27,7 +27,26 @@ print(f"Need {n:,} users per group")  # 1,571 users
 
 ---
 
-## Two Approaches
+## Three Approaches: Analytical vs Simulation
+
+ABTK provides two methods for experiment planning:
+
+1. **Analytical formulas** (`sample_size_calculator`) - Fast, exact calculations for TTest/CUPED/ZTest
+2. **Monte Carlo simulation** (`PowerAnalyzer`) - Works with ALL tests, including Bootstrap and cluster tests
+
+**Quick decision guide:**
+
+| Test Type | Recommended Method | Why |
+|-----------|-------------------|-----|
+| TTest, ZTest | Analytical OR Simulation | Analytical is faster (~instant) |
+| CupedTTest | Analytical OR Simulation | Analytical if correlation known |
+| BootstrapTest | **Simulation ONLY** | No analytical formula exists |
+| ClusteredBootstrapTest | **Simulation ONLY** | No analytical formula exists |
+| Any cluster test | Simulation (easier) | Analytical requires ICC estimation |
+
+---
+
+## Analytical Approach (sample_size_calculator)
 
 ### Approach 1: Use Historical Data (Recommended)
 
@@ -1040,9 +1059,670 @@ Before launching a cluster-randomized experiment:
 
 ---
 
+## Simulation-Based Power Analysis (PowerAnalyzer)
+
+For tests without analytical formulas (Bootstrap, ClusteredBootstrap) or when you want **empirical power estimates**, use `PowerAnalyzer` from `utils.power_analysis`.
+
+### Why Simulation?
+
+**The ONLY way to get MDE for:**
+- `BootstrapTest` - No analytical power formula exists
+- `PairedBootstrapTest` - No analytical power formula
+- `ClusteredBootstrapTest` - No analytical power formula
+- `PostNormedBootstrapTest` - Complex, no simple formula
+
+**Easier than analytical for:**
+- Cluster tests - Simulation avoids manual ICC/design effect calculations
+- Complex designs - Handles stratification, pairing, covariates automatically
+
+**How it works:**
+PowerAnalyzer uses **Monte Carlo simulation** to estimate power:
+1. Split historical data → control + treatment (50/50)
+2. **Add simulated effect** to treatment (perturbation - critical step!)
+3. Run statistical test
+4. Count significant results
+5. Power = (# rejections) / n_simulations
+
+### Quick Start
+
+```python
+from core.data_types import SampleData
+from tests.parametric import TTest
+from utils.power_analysis import PowerAnalyzer
+import numpy as np
+
+# Historical data (NOT split)
+historical = SampleData(data=np.random.normal(100, 20, 1000))
+
+# Configure test and analyzer
+test = TTest(alpha=0.05, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=1000, seed=42)
+
+# Estimate power for 5% increase
+power = analyzer.power_analysis(
+    sample=historical,
+    effect=0.05,
+    effect_type="multiplicative"
+)
+print(f"Power: {power:.1%}")  # e.g., Power: 78.5%
+```
+
+### Key Methods
+
+**1. Estimate Power:**
+```python
+power = analyzer.power_analysis(
+    sample=historical,
+    effect=0.05,            # Effect size
+    effect_type="multiplicative"  # or "additive", "binary"
+)
+```
+
+**2. Calculate MDE:**
+```python
+mde = analyzer.minimum_detectable_effect(
+    sample=historical,
+    target_power=0.8,      # 80% power
+    effect_type="multiplicative"
+)
+print(f"MDE: {mde:.1%}")  # e.g., MDE: 5.3%
+```
+
+**3. Generate Power Curve:**
+```python
+effects = [0.02, 0.04, 0.06, 0.08, 0.10]
+power_curve = analyzer.power_line(
+    sample=historical,
+    effects=effects,
+    effect_type="multiplicative"
+)
+# Returns: {0.02: 0.25, 0.04: 0.59, 0.06: 0.83, ...}
+```
+
+### Effect Types
+
+PowerAnalyzer supports three effect types:
+
+| Effect Type | Formula | Use Case | Example |
+|-------------|---------|----------|---------|
+| **multiplicative** | `Y × (1 + effect)` | Relative changes (%) | Revenue: $100 → $105 (effect=0.05) |
+| **additive** | `Y + effect` | Absolute changes | Session time: 10min → 12min (effect=2) |
+| **binary** | Flip 0→1 or 1→0 | Conversion rates | CVR: 5% → 6% (effect=0.01) |
+
+**Choosing effect type:**
+- Use `"multiplicative"` for relative effects (most common)
+- Use `"additive"` when baseline varies or is near zero
+- Use `"binary"` for conversion/click metrics with binary data
+
+### Example 1: Bootstrap Test MDE
+
+**Problem:** BootstrapTest has no analytical MDE formula.
+
+**Solution:** Use simulation!
+
+```python
+from tests.nonparametric import BootstrapTest
+import numpy as np
+
+# Skewed revenue data (perfect for bootstrap)
+np.random.seed(42)
+skewed_data = np.random.lognormal(mean=4.5, sigma=1.0, size=600)
+sample = SampleData(data=skewed_data)
+
+# Configure bootstrap test
+test = BootstrapTest(alpha=0.05, n_bootstrap=500, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=100, seed=42)
+
+# Calculate MDE (ONLY possible via simulation!)
+mde = analyzer.minimum_detectable_effect(
+    sample=sample,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+
+print(f"Bootstrap MDE: {mde:.1%}")
+# e.g., Bootstrap MDE: 12.3%
+```
+
+**Key insight:** Bootstrap handles skewness naturally, but you NEED simulation to plan experiments.
+
+### Example 2: Cluster-Randomized Experiment
+
+PowerAnalyzer **automatically handles clustering** - no manual ICC/design effect calculations needed!
+
+```python
+from tests.parametric import ClusteredTTest
+
+# 20 cities, 50 users per city
+n_clusters, cluster_size = 20, 50
+data, clusters = [], []
+
+np.random.seed(42)
+for cluster_id in range(n_clusters):
+    city_baseline = np.random.normal(100, 15)
+    city_data = city_baseline + np.random.normal(0, 10, cluster_size)
+    data.extend(city_data)
+    clusters.extend([cluster_id] * cluster_size)
+
+sample = SampleData(
+    data=np.array(data),
+    clusters=np.array(clusters)
+)
+
+# Configure cluster test
+test = ClusteredTTest(alpha=0.05, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Estimate power (splitter handles clustering automatically!)
+power = analyzer.power_analysis(
+    sample=sample,
+    effect=0.10,  # 10% increase
+    effect_type="multiplicative"
+)
+
+print(f"Power for geo test: {power:.1%}")
+# e.g., Power: 82.5%
+```
+
+**Advantages over analytical approach:**
+- No need to estimate ICC separately
+- No manual design effect calculation
+- Handles unbalanced clusters automatically
+- Works with `ClusteredBootstrapTest` (no analytical formula exists!)
+
+### Example 3: Clustered Bootstrap
+
+The most complex case - cluster + non-parametric + no formula!
+
+```python
+from tests.nonparametric import ClusteredBootstrapTest
+
+# Store experiment with skewed revenue
+n_stores = 15
+customers_per_store = 40
+data, clusters = [], []
+
+np.random.seed(42)
+for store_id in range(n_stores):
+    store_baseline = np.random.lognormal(4.5, 0.3)
+    store_data = store_baseline * np.random.lognormal(0, 0.5, customers_per_store)
+    data.extend(store_data)
+    clusters.extend([store_id] * customers_per_store)
+
+sample = SampleData(
+    data=np.array(data),
+    clusters=np.array(clusters)
+)
+
+# Configure clustered bootstrap
+test = ClusteredBootstrapTest(
+    alpha=0.05,
+    n_bootstrap=500,
+    test_type="relative"
+)
+analyzer = PowerAnalyzer(test=test, n_simulations=80, seed=42)
+
+# Calculate MDE (ONLY possible via simulation!)
+mde = analyzer.minimum_detectable_effect(
+    sample=sample,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+
+print(f"Clustered bootstrap MDE: {mde:.1%}")
+# e.g., MDE: 15.8%
+```
+
+**This accounts for:**
+- Store-level clustering
+- Non-normal revenue distribution (skewness)
+- Bootstrap resampling variability
+
+### Example 4: Binary Metrics (Conversion Rate)
+
+```python
+from tests.parametric import ZTest
+
+# Historical conversion data
+np.random.seed(42)
+baseline_rate = 0.03  # 3% conversion
+conversions = np.random.binomial(1, baseline_rate, 2000)
+sample = SampleData(data=conversions)
+
+# Z-test for proportions
+test = ZTest(alpha=0.05)
+analyzer = PowerAnalyzer(test=test, n_simulations=300, seed=42)
+
+# Power for 1 percentage point increase (3% → 4%)
+power = analyzer.power_analysis(
+    sample=sample,
+    effect=0.01,  # +1pp (absolute change in proportion)
+    effect_type="binary"  # Uses BinaryEffectSimulator
+)
+
+print(f"Power: {power:.1%}")
+# e.g., Power: 35.7%
+
+# Calculate MDE
+mde = analyzer.minimum_detectable_effect(
+    sample=sample,
+    target_power=0.8,
+    effect_type="binary"
+)
+print(f"MDE: {mde:.2%} (from 3.0% to {(0.03 + mde)*100:.1f}%)")
+# e.g., MDE: 0.02pp (from 3.0% to 5.0%)
+```
+
+### Power Curve Example
+
+Visualize power vs effect size:
+
+```python
+# Generate power curve
+test = TTest(alpha=0.05, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=300, seed=42)
+
+historical = SampleData(data=np.random.normal(100, 20, 800))
+effects = [0.02, 0.04, 0.06, 0.08, 0.10, 0.15, 0.20]
+
+print("Effect Size  |  Power")
+print("-" * 25)
+
+power_curve = analyzer.power_line(
+    sample=historical,
+    effects=effects,
+    effect_type="multiplicative"
+)
+
+for effect in effects:
+    power = power_curve[effect]
+    stars = "*" * int(power * 50)  # Visual
+    print(f"  {effect:5.1%}      |  {power:5.1%}  {stars}")
+
+# Effect Size  |  Power
+# -------------------------
+#    2.0%      |  25.3%  ************
+#    4.0%      |  58.7%  *****************************
+#    6.0%      |  83.2%  *****************************************
+#    8.0%      |  94.5%  ***********************************************
+#   10.0%      |  98.1%  *************************************************
+```
+
+### Parameters
+
+**PowerAnalyzer initialization:**
+```python
+analyzer = PowerAnalyzer(
+    test=test,              # Any abtk test (TTest, Bootstrap, etc.)
+    n_simulations=1000,     # Number of Monte Carlo runs (default: 1000)
+    seed=42                 # Random seed for reproducibility (optional)
+)
+```
+
+**Choosing n_simulations:**
+- **100-200:** Quick exploration (~seconds)
+- **500-1000:** Final estimates (~10-60 seconds for TTest)
+- **1000+:** High precision (slower for Bootstrap)
+
+**Trade-off:** More simulations = more accurate but slower.
+
+**Tip:** Start with 100-200 simulations to explore, then increase to 1000 for final numbers.
+
+### Performance Considerations
+
+Simulation is computationally expensive:
+
+| Configuration | Approximate Time |
+|---------------|------------------|
+| TTest, n_sim=100 | ~1 second |
+| TTest, n_sim=1000 | ~10 seconds |
+| BootstrapTest (n_bootstrap=500), n_sim=100 | ~30 seconds |
+| BootstrapTest (n_bootstrap=500), n_sim=1000 | ~5 minutes |
+
+**Tips for faster simulations:**
+- Use fewer simulations for exploration (n_sim=100)
+- Reduce `n_bootstrap` for Bootstrap tests (e.g., 200 instead of 1000)
+- Use `seed` for reproducibility so you don't need to re-run
+- Run overnight for complex scenarios (ClusteredBootstrap + high n_sim)
+
+### Simulation vs Analytical: When to Use Which?
+
+| Scenario | Use Analytical | Use Simulation |
+|----------|----------------|----------------|
+| TTest planning | ✅ Fast, exact | ⚠️ Slower, but works |
+| ZTest planning | ✅ Fast, exact | ⚠️ Slower, but works |
+| CUPED with known correlation | ✅ Use `calculate_mde_cuped()` | ⚠️ Slower |
+| BootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| ClusteredTTest | ⚠️ Need ICC estimate | ✅ Easier, automatic |
+| ClusteredBootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| Quick "what-if" scenarios | ✅ Instant results | ❌ Too slow |
+| Final validation | ⚠️ Assumptions required | ✅ Realistic estimates |
+
+**Recommendation:**
+1. Use **analytical** for quick TTest/CUPED/ZTest planning
+2. Use **simulation** for Bootstrap and cluster tests
+3. Use **simulation** for final validation before launch
+
+### Automatic Data Splitting
+
+PowerAnalyzer **automatically splits** historical data on each simulation:
+
+**For regular tests:**
+- Random 50/50 split
+
+**For cluster tests:**
+- Splits by clusters (randomizes cluster assignment)
+- Preserves cluster membership
+- Works with unbalanced clusters
+
+**For paired tests:**
+- Splits pairs (one observation from each pair per group)
+- Preserves pairing structure
+
+**Example (cluster splitting):**
+```python
+# Your input: ONE historical SampleData with clusters
+sample = SampleData(
+    data=historical_revenue,
+    clusters=city_ids  # Cluster IDs
+)
+
+# PowerAnalyzer splits automatically:
+# - Iteration 1: Cities [1,3,5,7,9] → control, [2,4,6,8,10] → treatment
+# - Iteration 2: Cities [2,5,6,9,10] → control, [1,3,4,7,8] → treatment
+# - ... (repeat 1000 times)
+
+power = analyzer.power_analysis(sample, effect=0.10)
+```
+
+**You don't need to:**
+- Pre-split data
+- Write splitting logic
+- Handle cluster randomization
+- Worry about balanced splits
+
+### Common Patterns
+
+**Pattern 1: Compare Sample Sizes**
+
+```python
+# How many users for 80% power?
+test = TTest(alpha=0.05, test_type="relative")
+target_effect = 0.05  # 5% increase
+
+historical_pool = np.random.normal(100, 20, 5000)
+
+for n in [200, 500, 1000, 2000]:
+    sample = SampleData(data=historical_pool[:n])
+    analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+    power = analyzer.power_analysis(sample, effect=target_effect, effect_type="multiplicative")
+
+    marker = "✓" if power >= 0.8 else " "
+    print(f"n={n:4d}: Power={power:.1%} {marker}")
+
+# n= 200: Power=42.5%
+# n= 500: Power=68.0%
+# n=1000: Power=88.5% ✓
+# n=2000: Power=98.0% ✓
+```
+
+**Pattern 2: Bootstrap vs TTest Comparison**
+
+```python
+# Compare power between TTest and Bootstrap
+historical = SampleData(data=np.random.lognormal(4.5, 0.8, 800))
+
+# TTest
+ttest = TTest(alpha=0.05, test_type="relative")
+analyzer_t = PowerAnalyzer(test=ttest, n_simulations=200, seed=42)
+power_t = analyzer_t.power_analysis(historical, effect=0.08, effect_type="multiplicative")
+
+# Bootstrap
+bootstrap = BootstrapTest(alpha=0.05, n_bootstrap=500, test_type="relative")
+analyzer_b = PowerAnalyzer(test=bootstrap, n_simulations=100, seed=42)
+power_b = analyzer_b.power_analysis(historical, effect=0.08, effect_type="multiplicative")
+
+print(f"TTest power: {power_t:.1%}")
+print(f"Bootstrap power: {power_b:.1%}")
+# For skewed data, Bootstrap may have more reliable power estimates
+```
+
+**Pattern 3: CUPED-like Variance Reduction**
+
+```python
+from tests.parametric import CupedTTest
+
+# Historical data with baseline covariate
+historical = SampleData(
+    data=current_revenue,
+    covariates=baseline_revenue  # Pre-experiment revenue
+)
+
+# Compare regular vs CUPED
+test_regular = TTest(alpha=0.05, test_type="relative")
+test_cuped = CupedTTest(alpha=0.05, test_type="relative")
+
+analyzer_reg = PowerAnalyzer(test=test_regular, n_simulations=200, seed=42)
+analyzer_cup = PowerAnalyzer(test=test_cuped, n_simulations=200, seed=42)
+
+power_reg = analyzer_reg.power_analysis(historical, effect=0.05, effect_type="multiplicative")
+power_cup = analyzer_cup.power_analysis(historical, effect=0.05, effect_type="multiplicative")
+
+print(f"Regular: {power_reg:.1%}")
+print(f"CUPED: {power_cup:.1%}")
+print(f"Improvement: {(power_cup - power_reg)*100:.1f}pp")
+```
+
+### Reproducibility
+
+Always use `seed` for reproducible results:
+
+```python
+# Run 1
+analyzer1 = PowerAnalyzer(test=test, n_simulations=100, seed=42)
+power1 = analyzer1.power_analysis(sample, effect=0.05, effect_type="multiplicative")
+
+# Run 2 (same seed)
+analyzer2 = PowerAnalyzer(test=test, n_simulations=100, seed=42)
+power2 = analyzer2.power_analysis(sample, effect=0.05, effect_type="multiplicative")
+
+assert power1 == power2  # Identical results!
+```
+
+**Without seed:** Results will vary slightly due to Monte Carlo noise.
+
+### Best Practices
+
+1. **Start with exploration (low n_simulations)**
+   ```python
+   # Quick check
+   analyzer = PowerAnalyzer(test=test, n_simulations=100)
+   power_rough = analyzer.power_analysis(sample, effect=0.05)
+   ```
+
+2. **Use high n_simulations for final estimates**
+   ```python
+   # Final planning
+   analyzer = PowerAnalyzer(test=test, n_simulations=1000, seed=42)
+   power_final = analyzer.power_analysis(sample, effect=0.05)
+   ```
+
+3. **Always set seed for reproducibility**
+   ```python
+   analyzer = PowerAnalyzer(test=test, n_simulations=500, seed=42)
+   ```
+
+4. **Check power curve to understand sensitivity**
+   ```python
+   effects = [0.03, 0.05, 0.08]  # Optimistic, standard, conservative
+   power_curve = analyzer.power_line(sample, effects=effects)
+   # See power for different scenarios
+   ```
+
+5. **For cluster tests, verify cluster counts**
+   ```python
+   n_clusters = len(np.unique(sample.clusters))
+   if n_clusters < 10:
+       print("⚠️ Warning: Few clusters. Power may be lower than expected.")
+   ```
+
+### FAQ: Simulation-Based Planning
+
+**Q: How long does simulation take?**
+
+**A:** Depends on test type and n_simulations:
+- TTest: ~10 seconds for 1000 simulations
+- Bootstrap: ~2-5 minutes for 1000 simulations (depends on n_bootstrap)
+- Cluster tests: Similar to non-cluster
+
+**Q: How many simulations do I need?**
+
+**A:**
+- 100-200: Quick exploration
+- 500-1000: Final planning
+- 1000+: High precision (diminishing returns)
+
+**Q: Can I use this for multiple comparisons (A/B/C)?**
+
+**A:** Yes! Just configure your test with corrected alpha:
+```python
+from utils.sample_size_calculator import adjust_alpha_for_multiple_comparisons
+
+alpha_adj = adjust_alpha_for_multiple_comparisons(alpha=0.05, num_groups=3)
+test = TTest(alpha=alpha_adj, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=500)
+```
+
+**Q: Does simulation work with paired tests?**
+
+**A:** Yes! PowerAnalyzer automatically handles paired data:
+```python
+from tests.parametric import PairedTTest
+
+# Historical paired data
+sample = SampleData(
+    data=paired_observations,
+    paired_ids=pair_identifiers
+)
+
+test = PairedTTest(alpha=0.05)
+analyzer = PowerAnalyzer(test=test, n_simulations=500)
+power = analyzer.power_analysis(sample, effect=0.05)
+```
+
+**Q: How accurate is simulation vs analytical?**
+
+**A:** For tests with analytical formulas (TTest, ZTest), simulation converges to analytical with high n_simulations:
+```python
+# Analytical
+mde_analytical = calculate_mde_ttest(mean=100, std=20, n=1000)
+# 3.5%
+
+# Simulation (high n_sim)
+test = TTest(alpha=0.05, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=5000, seed=42)
+mde_simulation = analyzer.minimum_detectable_effect(
+    SampleData(data=np.random.normal(100, 20, 1000)),
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+# ~3.5% (within Monte Carlo error)
+```
+
+**Q: Can I reduce simulation time?**
+
+**A:** Yes:
+1. Use fewer simulations for exploration (100-200)
+2. For Bootstrap, reduce `n_bootstrap` in test configuration
+3. Use `power_line()` carefully (each effect = full simulation)
+4. Run complex scenarios overnight
+
+### When NOT to Use Simulation
+
+**Don't use simulation if:**
+- ❌ You need instant results for quick "what-if" scenarios
+- ❌ You're planning a simple TTest with no complexity
+- ❌ You don't have historical data (simulation needs historical data to split)
+
+**Use analytical instead:**
+```python
+# Much faster for simple TTest
+from utils.sample_size_calculator import calculate_mde_ttest
+mde = calculate_mde_ttest(mean=100, std=20, n=1000)  # Instant!
+```
+
+### Complete Example: Bootstrap Experiment Planning
+
+```python
+import numpy as np
+from core.data_types import SampleData
+from tests.nonparametric import BootstrapTest
+from utils.power_analysis import PowerAnalyzer
+
+# Step 1: Load historical data (skewed revenue)
+np.random.seed(42)
+historical_revenue = np.random.lognormal(mean=4.6, sigma=0.8, size=1000)
+print(f"Mean: ${np.mean(historical_revenue):.2f}")
+print(f"Median: ${np.median(historical_revenue):.2f}")
+print(f"Skewness: High (Bootstrap is ideal!)")
+
+sample = SampleData(data=historical_revenue, name="Historical Revenue")
+
+# Step 2: Configure Bootstrap test
+test = BootstrapTest(
+    alpha=0.05,
+    n_bootstrap=500,
+    test_type="relative"
+)
+
+# Step 3: Create analyzer
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Step 4: Estimate power for 8% increase
+power = analyzer.power_analysis(
+    sample=sample,
+    effect=0.08,
+    effect_type="multiplicative"
+)
+print(f"\nPower for 8% increase: {power:.1%}")
+
+# Step 5: Calculate MDE for 80% power
+print("\nCalculating MDE (this may take 1-2 minutes)...")
+mde = analyzer.minimum_detectable_effect(
+    sample=sample,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+print(f"MDE (80% power): {mde:.1%}")
+
+# Step 6: Generate power curve
+effects = [0.05, 0.08, 0.10, 0.15]
+print("\nPower Curve:")
+power_curve = analyzer.power_line(sample, effects=effects, effect_type="multiplicative")
+for e, p in power_curve.items():
+    print(f"  {e:.0%} effect → {p:.1%} power")
+
+# Step 7: Decision
+if power >= 0.8:
+    print(f"\n✓ Sufficient power to detect 8% increase")
+else:
+    print(f"\n✗ Need more users or larger effect")
+    print(f"  Minimum detectable: {mde:.1%}")
+```
+
+### See Also
+
+- [Bootstrap Tests Guide](nonparametric-tests.md) - Details on Bootstrap tests
+- [Cluster Experiments Guide](cluster-experiments.md) - Cluster-randomized experiments
+- [Power Analysis Examples](../../examples/power_analysis_examples.py) - 8 complete examples
+
+---
+
 ## Summary
 
-**Key functions:**
+**Two approaches for experiment planning:**
+
+### 1. Analytical (sample_size_calculator) - Fast, exact formulas
 
 **Sample Size & MDE:**
 - `calculate_mde_ttest()` - What effect can we detect?
@@ -1056,13 +1736,45 @@ Before launching a cluster-randomized experiment:
 - `calculate_number_of_comparisons()` - How many comparisons in multi-variant test?
 - `adjust_alpha_for_multiple_comparisons()` - Adjust alpha for planning multi-variant tests
 
+**Cluster Utilities:**
+- `calculate_icc()` - Estimate intra-class correlation
+- `calculate_design_effect()` - Variance inflation from clustering
+
+**Use analytical when:**
+- Planning TTest, ZTest, or CUPED experiments
+- Need instant results for quick "what-if" scenarios
+- Know parameters (mean, std, correlation)
+
+### 2. Simulation-Based (PowerAnalyzer) - Monte Carlo simulation
+
+**Key methods:**
+- `PowerAnalyzer.power_analysis()` - Estimate power for given effect
+- `PowerAnalyzer.minimum_detectable_effect()` - MDE via binary search
+- `PowerAnalyzer.power_line()` - Power curves for multiple effects
+
+**Use simulation when:**
+- Planning **BootstrapTest** or **ClusteredBootstrapTest** (ONLY option!)
+- Planning cluster experiments (easier than analytical)
+- Want empirical power estimates
+- Have historical data to split
+
+**Quick decision:**
+| Test Type | Use Analytical | Use Simulation |
+|-----------|----------------|----------------|
+| TTest, ZTest | ✅ Fast | ⚠️ Works but slower |
+| CUPED | ✅ If correlation known | ⚠️ Works |
+| BootstrapTest | ❌ No formula | ✅ **ONLY option** |
+| Cluster tests | ⚠️ Requires ICC | ✅ **Easier** |
+
 **Remember:**
-1. Use historical data when available
+1. Use historical data when available (both methods)
 2. CUPED can reduce sample size by 50%+ (if correlation > 0.7)
 3. Plan for total users (both groups!)
 4. Check correlation before using CUPED
 5. **Always adjust alpha for multiple comparisons** (A/B/C, A/B/C/D, etc.)
 6. Account for attrition
+7. **Use simulation for Bootstrap tests** - no analytical formula exists
+8. Set `seed` in PowerAnalyzer for reproducibility
 
 ---
 

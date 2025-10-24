@@ -4,7 +4,7 @@
 
 ### What is ABTK?
 
-ABTK (A/B Testing Toolkit) is a Python library for statistical analysis of A/B tests. It provides 8 different statistical tests, variance reduction techniques, and utilities for rigorous A/B test analysis.
+ABTK (A/B Testing Toolkit) is a Python library for statistical analysis of A/B tests. It provides 12 different statistical tests (including parametric, nonparametric, and cluster tests), variance reduction techniques (CUPED/ANCOVA), simulation-based power analysis, and utilities for rigorous A/B test analysis.
 
 ### Why use ABTK instead of scipy.stats?
 
@@ -257,6 +257,142 @@ result.reject   # True (significant at alpha=0.05)
 Rule of thumb:
 - pvalue < 0.05 → significant (reject null)
 - pvalue ≥ 0.05 → not significant (fail to reject null)
+
+---
+
+## Experiment Planning
+
+### How do I calculate sample size / MDE?
+
+ABTK provides **two approaches** for experiment planning:
+
+**1. Analytical (fast, exact formulas):**
+```python
+from utils.sample_size_calculator import calculate_mde_ttest, calculate_sample_size_ttest
+
+# What can I detect with 1000 users?
+mde = calculate_mde_ttest(mean=100, std=20, n=1000)
+print(f"Can detect {mde:.2%} effect")  # 3.5%
+
+# How many users to detect 5% effect?
+n = calculate_sample_size_ttest(mean=100, std=20, mde=0.05)
+print(f"Need {n:,} users per group")  # 1,571
+```
+
+**2. Simulation-based (for Bootstrap and cluster tests):**
+```python
+from utils.power_analysis import PowerAnalyzer
+from tests.nonparametric import BootstrapTest
+
+test = BootstrapTest(alpha=0.05, n_bootstrap=500, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Calculate MDE (ONLY option for Bootstrap!)
+mde = analyzer.minimum_detectable_effect(
+    sample=historical_data,
+    target_power=0.8,
+    effect_type="multiplicative"
+)
+```
+
+**See [Experiment Planning Guide](user-guide/experiment-planning.md) for complete details.**
+
+### When should I use simulation vs analytical?
+
+| Scenario | Use Analytical | Use Simulation |
+|----------|----------------|----------------|
+| TTest planning | ✅ Fast (~instant) | ⚠️ Slower (~10 sec) |
+| ZTest planning | ✅ Fast | ⚠️ Slower |
+| CUPED planning | ✅ If correlation known | ⚠️ Slower |
+| **BootstrapTest** | ❌ No formula exists | ✅ **ONLY option** |
+| **ClusteredBootstrapTest** | ❌ No formula exists | ✅ **ONLY option** |
+| Cluster tests | ⚠️ Need ICC estimate | ✅ Easier, automatic |
+| Quick "what-if" | ✅ Instant | ❌ Too slow |
+
+**Rule of thumb:**
+- Use **analytical** for TTest/CUPED/ZTest (faster)
+- Use **simulation** for Bootstrap and cluster tests (ONLY option)
+
+### How long does PowerAnalyzer simulation take?
+
+Depends on test type and number of simulations:
+
+| Configuration | Time |
+|---------------|------|
+| TTest, 1000 simulations | ~10 seconds |
+| BootstrapTest (n_bootstrap=500), 100 simulations | ~30 seconds |
+| BootstrapTest (n_bootstrap=500), 1000 simulations | ~5 minutes |
+
+**Tip:** Start with 100-200 simulations for exploration, then use 1000 for final planning.
+
+### Can PowerAnalyzer handle cluster experiments?
+
+**Yes!** PowerAnalyzer automatically handles clustering:
+
+```python
+from tests.parametric import ClusteredTTest
+
+# Historical data with cluster IDs
+sample = SampleData(
+    data=revenue_data,
+    clusters=city_ids  # Cluster IDs (geo test, store test, etc.)
+)
+
+test = ClusteredTTest(alpha=0.05, test_type="relative")
+analyzer = PowerAnalyzer(test=test, n_simulations=200, seed=42)
+
+# Estimate power (splitter handles clustering automatically!)
+power = analyzer.power_analysis(
+    sample=sample,
+    effect=0.10,  # 10% increase
+    effect_type="multiplicative"
+)
+```
+
+**Advantages over analytical:**
+- No manual ICC estimation needed
+- No design effect calculation
+- Handles unbalanced clusters automatically
+- Works with ClusteredBootstrapTest (no analytical formula!)
+
+### What's the difference between effect types in PowerAnalyzer?
+
+| Effect Type | Formula | Use Case | Example |
+|-------------|---------|----------|---------|
+| **multiplicative** | `Y × (1 + effect)` | Relative changes (%) | Revenue: $100 → $105 (effect=0.05) |
+| **additive** | `Y + effect` | Absolute changes | Time: 10min → 12min (effect=2) |
+| **binary** | Flip 0→1 or 1→0 | Conversion rates | CVR: 5% → 6% (effect=0.01) |
+
+**Use `"multiplicative"` for most cases** (relative changes like "5% lift")
+
+### Why do I need historical data for PowerAnalyzer?
+
+PowerAnalyzer splits historical data to simulate the experiment:
+1. Split data → control + treatment
+2. Add effect to treatment (perturbation)
+3. Run test
+4. Repeat 1000 times → estimate power
+
+**Without historical data:**
+- Use analytical approach (`sample_size_calculator`)
+- Or use industry estimates to create synthetic data
+
+### How accurate is simulation vs analytical?
+
+For tests with analytical formulas (TTest, ZTest), simulation converges to analytical:
+
+```python
+# Analytical: 3.5% MDE
+mde_analytical = calculate_mde_ttest(mean=100, std=20, n=1000)
+
+# Simulation: ~3.5% MDE (with high n_simulations)
+analyzer = PowerAnalyzer(test=TTest(), n_simulations=5000, seed=42)
+mde_simulation = analyzer.minimum_detectable_effect(...)
+
+# Difference < 0.5% (Monte Carlo error)
+```
+
+**For Bootstrap tests:** Simulation is the ONLY option!
 
 ---
 
